@@ -1,0 +1,458 @@
+<template>
+  <v-container class="p-search">
+    <v-row>
+      <v-col cols="12">
+        <v-card>
+          <v-card-title>
+            <v-select v-model="selectedBookId" variant="underlined" class="mr-5 p-search__select-book"
+              item-title="title" item-value="id" :items="books" :label="t('search.title')" />
+            <v-text-field v-model="editingQuery.text" variant="underlined" class="mr-2" :label="t('search.text')"
+              @keyup.enter="search" />
+            <v-text-field v-model="editingQuery.volume" variant="underlined" class="mr-2" :label="t('search.volume')"
+              type="number" />
+            <v-text-field v-model="editingQuery.chapter" variant="underlined" class="mr-2" :label="t('search.chapter')"
+              type="number" />
+            <v-btn @click="search">
+              <v-icon>{{ icon.mdiMagnify }}</v-icon>
+            </v-btn>
+          </v-card-title>
+          <!-- <v-expansion-panels flat>
+            <v-expansion-panel>
+              <v-expansion-panel-header>Panel 1</v-expansion-panel-header>
+              <v-expansion-panel-content>
+                Some content
+              </v-expansion-panel-content>
+            </v-expansion-panel>
+          </v-expansion-panels> -->
+        </v-card>               
+      </v-col>
+    </v-row>
+    <v-row class="p-search__result-header">
+      <v-col>
+        <div v-if="!loading" class="p-search__result-header__num py-3">
+          {{ bubbles.length }} {{ t('search.result_count') }}
+        </div>
+        <v-btn-toggle v-model="view" mandatory="force">
+          <v-btn :value="'list'">
+            <v-icon>{{ icon.mdiViewHeadline }}</v-icon>
+          </v-btn>
+          <v-btn :value="'image'">
+            <v-icon>{{ icon.mdiViewGridOutline }}</v-icon>
+          </v-btn>
+        </v-btn-toggle>
+      </v-col>
+    </v-row>
+    <v-row v-show="view == 'list'" class="p-search__listview">
+      <v-col cols="7" class="p-search__listview__table">
+        <v-data-table :items-per-page="15" :headers="headers" :items="bubbles" :loading="loading" class="elevation-1"
+          :footer-props="{
+            'items-per-page-options': [15, 50, 100, -1],
+          }">
+          <!-- 'background-color': index===selectedBubbleIndex ? 'rgba(205, 102, 20, 0.3)' : null -->
+          <template #item="{ item }">
+            <tr :style="{
+              cursor: 'pointer',
+              'background-color':
+                item.index === selectedBubbleIndex
+                  ? 'rgba(80, 80, 80, 1.0)'
+                  : 'white',
+              color: item.index === selectedBubbleIndex ? 'white' : 'black',
+            }" @click="onClickRow(item)">
+              <td>{{ item.chapter_index }}</td>
+              <td>{{ item.page_index + 1 }}</td>
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <td v-html="textWithHighlight(item.text)" />
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <td v-html="textWithHighlight(item.translated_text)" />
+              <td>
+                <button-with-tooltip icon :tooltip="'エディタを起動'" @click="launchEditor(item.editor_link)"><v-icon
+                    size="small"> {{ icon.mdiOpenInNew }} </v-icon>
+                </button-with-tooltip>
+              </td>
+            </tr>
+          </template>
+        </v-data-table>
+      </v-col>
+      <v-col cols="5">
+        <div v-if="imageAvailable(selectedBubble) || selectedImageInfo !== null">
+          <searched-image v-if="imageAvailable(selectedBubble) || selectedImageInfo !== null"
+            :boxes="selectedBubble ? [selectedBubble.bounding_box] : null" :image="selectedImage" />
+          <div class="p-search__listview__footer">
+            <v-btn icon @click="toPreviousPage">
+              <v-icon>{{ icon.mdiArrowLeft }}</v-icon></v-btn>
+            {{
+              selectedBubble
+                ? selectedBubble.page_index + 1
+                : selectedImageInfo.page_index + 1
+            }}
+            /
+            {{ totalPage }}
+            <v-btn icon @click="toNextPage">
+              <v-icon>{{ icon.mdiArrowRight }}</v-icon></v-btn>
+          </div>
+        </div>
+        <!-- :image-url="selectedBubble.original_image.display_url" -->
+      </v-col>
+    </v-row>
+    <v-row v-show="view == 'image'" class="p-search__imageview">
+      <v-col v-for="(bubble, index) in bubbles" :key="`bubble-${index}`" cols="4">
+        <v-badge color="success" :content="`Vol. ${bubble.chapter_index} P${bubble.page_index + 1}`"
+          class="p-search__imageview__badge" offset-x="75" offset-y="22" @click="launchEditor(bubble.editor_link)">
+          <searched-image v-if="imageAvailable(bubble)" :boxes="[bubble.bounding_box]" :image="imageUrlsByBookId[selectedBookId][bubble.chapter_index - 1][
+            bubble.page_index
+          ]
+            " />
+        </v-badge>
+        <div class="p-search__imageview__text">
+          <!-- eslint-disable-next-line vue/no-v-html -->
+          <div v-html="textWithHighlight(bubble.text)"></div>
+        </div>
+      </v-col>
+    </v-row>
+  </v-container>
+</template>
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted, inject } from 'vue';
+import {
+  mdiMagnify,
+  mdiOpenInNew,
+  mdiViewHeadline,
+  mdiViewGridOutline,
+  mdiArrowLeft,
+  mdiArrowRight,
+} from '@mdi/js';
+import { useStore } from 'vuex';
+import { User, SearchQuery, SearchedBubble, ImageSummary } from '@/models';
+import { updateTitle } from '@/utils/utils';
+import SearchedImage from '@/components/ui/SearchedImage.vue';
+import ButtonWithTooltip from '@/components/ui/ButtonWithTooltip.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
+import { authManager } from '@/config/auth_manager';
+import { EventHandler } from '@/config/shortcut_key_manager';
+import {
+  ApiKey,
+  DeepCopyKey,
+  ShortcutKeyManagerKey,
+} from '@/plugins/providedProperties';
+
+type SearchResultViewType = 'list' | 'image';
+type BookBasic = {
+  id: number;
+  title: string;
+};
+
+defineProps({
+  translator: {
+    type: String,
+    required: true,
+  },
+  lang: {
+    type: String,
+    required: true,
+  },
+});
+
+const $deepCopy = inject(DeepCopyKey);
+const $api = inject(ApiKey);
+const $shortcutKeyManager = inject(ShortcutKeyManagerKey);
+const $store = useStore();
+const books = ref<BookBasic[]>([]);
+const imageUrlsByBookId = ref<{ [field in number]?: Array<ImageSummary>[] }>(
+  {}
+);
+const bubbles = ref<SearchedBubble[]>([]);
+const loading = ref(true);
+const selectedBookId = ref<number>(null);
+const query = ref<SearchQuery>({ text: '', volume: null, chapter: null });
+const editingQuery = ref<SearchQuery>({
+  text: '',
+  volume: null,
+  chapter: null,
+});
+
+const headers = computed(() => [
+  {
+    value: 'chapter_index',
+    sortable: false,
+    title: t('search.chapter_index'),
+    align: 'start',
+    width: 40,
+  },
+  {
+    value: 'page_index',
+    sortable: false,
+    title: t('search.page_index'),
+    align: 'start',
+    width: 60,
+  },
+  {
+    value: 'text',
+    sortable: false,
+    title: '',
+    align: 'start',
+    width: 200,
+  },
+  {
+    value: 'translated_text',
+    sortable: false,
+    text: '訳文',
+    align: 'start',
+    width: 200,
+  },
+  { title: '', value: 'actions', sortable: false, width: 100 },
+]);
+const icon = {
+  mdiMagnify,
+  mdiOpenInNew,
+  mdiViewGridOutline,
+  mdiViewHeadline,
+  mdiArrowRight,
+  mdiArrowLeft,
+};
+const user = ref<User>(null);
+const view = ref<SearchResultViewType>('list');
+const selectedBubbleIndex = ref<number>(null);
+const selectedImageInfo = ref<{
+  chapter_index: number;
+  page_index: number;
+}>(null);
+const onKeyDownHandler = ref<EventHandler>();
+
+const onKeyDown = async (e: KeyboardEvent) => {
+  switch (e.key) {
+    case 'ArrowRight':
+      toNextPage();
+      break;
+    case 'ArrowLeft':
+      toPreviousPage();
+      break;
+    case 'ArrowUp':
+      toPreviousBubble();
+      break;
+    case 'ArrowDown':
+      toNextBubble();
+      break;
+    default:
+      return;
+  }
+  e.preventDefault();
+};
+
+const selectedBubble = computed(() => {
+  return (
+    selectedBubbleIndex.value !== null &&
+    bubbles.value[selectedBubbleIndex.value]
+  );
+});
+const initializeSelectedImageInfo = () => {
+  if (selectedBubbleIndex.value !== null) {
+    let selectedBubble1 = $deepCopy(selectedBubble.value);
+    selectedImageInfo.value = {
+      chapter_index: selectedBubble1.chapter_index,
+      page_index: selectedBubble1.page_index,
+    };
+    selectedBubbleIndex.value = null;
+  }
+};
+const selectedImage = computed(() => {
+  if (!imageUrlsByBookId.value[selectedBookId.value]) {
+    return null;
+  }
+  if (selectedBubbleIndex.value !== null) {
+    return imageUrlsByBookId.value[selectedBookId.value][
+      selectedBubble.value.chapter_index - 1
+    ][selectedBubble.value.page_index];
+  } else if (selectedImageInfo.value !== null) {
+    return imageUrlsByBookId.value[selectedBookId.value][
+      selectedImageInfo.value.chapter_index - 1
+    ][selectedImageInfo.value.page_index];
+  }
+  return null;
+});
+const totalPage = computed(() => {
+  if (!selectedBubble.value && !selectedImageInfo.value) {
+    return 0;
+  }
+  let chapter_index = selectedBubble.value
+    ? selectedBubble.value.chapter_index
+    : selectedImageInfo.value.chapter_index;
+  return imageUrlsByBookId.value[selectedBookId.value][chapter_index - 1]
+    .length;
+});
+
+const toNextPage = () => {
+  initializeSelectedImageInfo();
+  let npage =
+    imageUrlsByBookId.value[selectedBookId.value][
+      selectedImageInfo.value.chapter_index - 1
+    ].length;
+  selectedImageInfo.value.page_index = Math.min(
+    selectedImageInfo.value.page_index + 1,
+    npage - 1
+  );
+};
+const toPreviousPage = () => {
+  initializeSelectedImageInfo();
+  selectedImageInfo.value.page_index = Math.max(
+    selectedImageInfo.value.page_index - 1,
+    0
+  );
+};
+const toNextBubble = () => {
+  selectedBubbleIndex.value += 1;
+  if (selectedBubbleIndex.value >= bubbles.value.length) {
+    selectedBubbleIndex.value = 0;
+  }
+};
+const toPreviousBubble = () => {
+  selectedBubbleIndex.value -= 1;
+  if (selectedBubbleIndex.value < 0) {
+    selectedBubbleIndex.value = bubbles.value.length - 1;
+  }
+};
+const imageAvailable = (bubble: SearchedBubble) => {
+  if (!bubble) {
+    return false;
+  }
+  let imageUrls = imageUrlsByBookId.value[selectedBookId.value];
+  return imageUrls && imageUrls[bubble.chapter_index - 1];
+};
+
+const textWithHighlight = (text: string) => {
+  let query1 = query.value.text;
+  if (!query1) {
+    return;
+  }
+  let last_position = 0;
+  let position = -1;
+  let html = '';
+  while (text && (position = text.indexOf(query1, last_position)) >= 0) {
+    html += `${text.slice(last_position, position)}<span style="color: red">${query.value.text
+      }</span>`;
+    last_position = position + query1.length;
+  }
+  html += text.slice(last_position);
+  return html;
+};
+
+onMounted(async () => {
+  updateTitle(t('navigation.search') as string);
+  try {
+    user.value = await authManager.getUser();
+    books.value = (await $api.fetchAssignedBookList(
+      user.value.id
+    )) as BookBasic[];
+    selectedBookId.value = books.value[0].id;
+  } catch (error) {
+    $store.dispatch('setSnackData', {
+      error: true,
+      show: true,
+      errObj: error,
+      color: 'error',
+    });
+  } finally {
+    loading.value = false;
+  }
+  onKeyDownHandler.value = $shortcutKeyManager.addEventListener(
+    'keydown',
+    onKeyDown.bind(this)
+  );
+});
+
+onUnmounted(() => {
+  onKeyDownHandler.value.cancel();
+});
+
+const search = async () => {
+  try {
+    query.value = $deepCopy(editingQuery.value);
+    if (query.value.text === '') {
+      return;
+    }
+    loading.value = true;
+    // Start both queries concurrently.
+    const searchFromBookPromise = $api.searchFromBook(
+      selectedBookId.value,
+      query.value
+    );
+    const fetchImagesInBookPromise = imageUrlsByBookId.value[
+      selectedBookId.value
+    ]
+      ? Promise.resolve(imageUrlsByBookId.value[selectedBookId.value])
+      : $api.fetchImagesInBook(selectedBookId.value);
+
+    // Set bubbles.value as soon as the searchFromBook query resolves.
+    bubbles.value = (await searchFromBookPromise).map(
+      (bubble: SearchedBubble, index: number) => {
+        bubble.index = index;
+        bubble.text = bubble.text.replace(/\n/g, ' ');
+        bubble.translated_text = bubble.translated_text.replace(/\n/g, ' ');
+        return bubble;
+      }
+    );
+
+    // Fetch images only if they have not been fetched before.
+    if (!imageUrlsByBookId.value[selectedBookId.value]) {
+      imageUrlsByBookId.value[selectedBookId.value] =
+        await fetchImagesInBookPromise;
+    }
+  } catch (error) {
+    $store.dispatch('setSnackData', {
+      error: true,
+      show: true,
+      errObj: error,
+      color: 'error',
+    });
+  } finally {
+    loading.value = false;
+  }
+};
+
+const onClickRow = (item: SearchedBubble) => {
+  selectedBubbleIndex.value = bubbles.value.indexOf(item);
+  selectedImageInfo.value = null;
+};
+
+const launchEditor = (path: string) => {
+  window.open(path, '_blank');
+};
+</script>
+<style lang="scss" scoped>
+.p-search {
+  &__select-book {
+    max-width: 200px;
+  }
+
+  &__listview {
+    &__table {
+      font-size: 0.8em;
+
+      &__text {
+        font-size: 0.8em;
+      }
+
+      &__badge {
+        display: block;
+        cursor: pointer;
+      }
+    }
+
+    &__footer {
+      text-align: center;
+    }
+  }
+
+  &__imageview {
+    &__text {
+      font-size: 0.8em;
+    }
+
+    &__badge {
+      display: block;
+      cursor: pointer;
+    }
+  }
+}
+</style>

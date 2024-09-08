@@ -1,0 +1,154 @@
+((("copilot-mode-map" .
+   [1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0])
+  ("with-eval-after-load" .
+   [1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0])
+  ("with" .
+   [1 0 0 0])
+  ("indent-for-tab-command" .
+   [1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0])
+  ("copilot-accept-completion" .
+   [0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0])
+  ("or" .
+   [1 0])
+  ("if" .
+   [1 0])
+  ("interactive" .
+   [1 0 0 0 0 0 0 0 0 0 0])
+  ("append" .
+   [1 0 0 0 0 0])
+  (":el-get" .
+   [1 0 0 0 0 0 0])
+  (":url" .
+   [1 0 0 0])
+  ("doom-themes-neotree-config" .
+   [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0])
+  ("comint-mode-hook" .
+   [0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0])
+  ("reformatter" .
+   [1 0 0 0 0 0 0 0 0 0 0])
+  (":config" .
+   [4 0 0 0 0 0 0])
+  ("python-mode-hook" .
+   [2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0])
+  ("ruff-format-on-save-mode" .
+   [0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0])
+  ("python-mode" .
+   [1 0 0 0 0 0 0 0 0 0 0])
+  ("itemsPerPage" .
+   [1 0 0 0 0 0 0 0 1 0 0 0])
+  ("page" .
+   [1 0 0 0])
+  ("per" .
+   [1 0 0])
+  ("items" .
+   [1 0 0 0 0])
+  ("toNextBubble" .
+   [1 0 0 0 0 0 0 0 0 0 0 0])
+  ("bubbles" .
+   [2 0 0 0 0 0 0])
+  ("toPreviousBubble" .
+   [0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0])
+  ("index" .
+   [1 0 0 0 0])
+  ("bubble" .
+   [1 0 0 0 0 0])
+  ("value" .
+   [8 0 0 0 0])
+  ("max" .
+   [1 0 0])
+  ("selectedBubbleIndex" .
+   [4 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 1 0 1])
+  ("const" .
+   [4 0 0 0 0])
+  ("toPreviousPage" .
+   [0 0 0 0 0 1 0 0 0 0 0 0 0 0])
+  ("toNextPage" .
+   [2 0 0 0 0 0 0 0 0 0])
+  ("copilot-node-executable" .
+   [1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0])
+  (":require" .
+   [7 0 0 0 0 0 0 0])
+  (":ensure" .
+   [10 0 0 0 0 0 0])
+  ("leaf" .
+   [14 0 0 0])
+  ("copilot" .
+   [4 0 2 0 1 0 3])
+  ("require" .
+   [5 0 0 0 0 0 0])
+  ("load-path" .
+   [3 0 0 0 0 1 0 0 2])
+  ("load" .
+   [3 0 0 0])
+  ("add-to-list" .
+   [3 0 0 0 0 0 0 1 0 0 3])
+  ("define-key" .
+   [1 0 0 0 0 0 0 0 0 1])
+  ("global-map" .
+   [0 0 0 0 0 0 0 0 0 1])
+  ("kbd" .
+   [2 0 0])
+  ("backward-delete-char" .
+   [0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0])
+  ("setq" .
+   [7 0 0 0])
+  ("text-mode" .
+   [2 0 0 0 0 0 0 0 0])
+  ("add-hook" .
+   [2 0 0 0 0 0 0 2])
+  ("text-mode-hook" .
+   [1 0 0 0 0 0 0 0 0 0 0 0 0 0])
+  ("turn-on-auto-fill" .
+   [0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0])
+  ("defun" .
+   [2 0 0 0 0])
+  ("concat" .
+   [3 0 0 0 0 0])
+  ("user-emacs-directory" .
+   [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3])
+  ("add" .
+   [1 0 0])
+  ("__init__" .
+   [0 0 0 1 0 0 0 0])
+  ("__main__" .
+   [0 0 0 0 1 0 0 0])
+  ("main" .
+   [0 0 0 1])
+  ("~/.emacs.d/backup" .
+   [0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0])
+  ("execute" .
+   [0 0 0 1 0 0 0])
+  ("exec-path" .
+   [0 0 0 1 0 0 0 1 1])
+  ("prog-mode" .
+   [0 0 0 0 0 0 0 0 1])
+  ("undo-tree-save-history" .
+   [0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0])
+  ("nil" .
+   [2 0 0])
+  ("ruff-format" .
+   [0 0 0 0 0 1 0 0 0 0 0])
+  ("highlight-indent-guides" .
+   [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3])
+  ("highlight" .
+   [0 0 0 0 0 0 0 0 1])
+  (":" .
+   [2])
+  (":hook" .
+   [1 0 0 0 0])
+  ("prog-mode-hook" .
+   [1 0 0 0 0 0 0 0 0 0 0 0 0 0])
+  ("copilot-mode" .
+   [1 0 0 0 0 0 0 0 0 0 0 0])
+  (":setq" .
+   [1 0 0 0 0])
+  (":load" .
+   [1 0 0 0 0])
+  (":load-path" .
+   [3 0 0 0 0 0 0 0 0 0])
+  ("load-theme" .
+   [1 0 0 0 0 0 0 0 0 0])
+  ("wheatgrass" .
+   [0 0 0 0 0 0 0 0 0 1])
+  ("exec-path-from-shell-initialize" .
+   [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0])))

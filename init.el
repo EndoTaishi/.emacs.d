@@ -57,7 +57,7 @@
 (setq show-paren-style 'parenthesis)
 (set-face-attribute 'show-paren-match nil
       :background "gray"
-      :underline 'unspecified);
+      :underline 'unspecified)
 
 ;; 対応する括弧を自動挿入
 (electric-pair-mode 1)
@@ -114,7 +114,9 @@
 
 (define-key global-map (kbd "C-t") 'other-window) ; ウィンドウ切り替え
 (define-key global-map (kbd "C-x f") 'find-file) ; C-x C-f と同等
-(define-key global-map (kbd "C-h") 'backward-delete-char)
+(define-key global-map (kbd "C-h") 'backward-delete-char) ; C-h でバックスペース
+(define-key global-map (kbd "C-x ?") 'help-command) ; C-x ? でヘルプを表示
+
 
 ;; 単体行コメントアウト用コマンド
 (defun comment-out-current-line ()
@@ -124,7 +126,7 @@
   (set-mark-command nil)
   (move-end-of-line 1)
   (comment-dwim nil))
-(global-set-key (kbd "C-;") 'comment-out-current-line)
+(define-key global-map (kbd "C-;") 'comment-out-current-line)
 
 ;; 選択中の入力は、regionを削除して挿入する
 (leaf delsel
@@ -201,9 +203,6 @@
   :bind (("C-a" . mwim-beginning-of-code-or-line)
          ("C-e" . mwim-end-of-code-or-line)))
 
-;; prog-modeでcopilotを有効にする
-(add-hook 'prog-mode-hook 'copilot-mode)
-
 (add-to-list 'auto-mode-alist '(("\\.ts" . typescript-ts-mode)
                                 ("\\.tsx" . typescript-ts-mode)
                                 ("\\.js" . js-ts-mode)
@@ -235,7 +234,6 @@
   :custom ((global-undo-tree-mode . t)
            (undo-tree-auto-save-history . nil)))
 
-;; auto-complete
 (leaf auto-complete
   :ensure t
   :leaf-defer nil
@@ -244,7 +242,6 @@
   :custom ((ac-use-menu-map . t)
            (ac-ignore-case . nil))
   :bind (:ac-mode-map
-         ; ("M-TAB" . auto-complete))
          ("M-t" . auto-complete)))
 
 ;; smart-mode-line
@@ -283,7 +280,7 @@
 
 ;; ivy
 (leaf ivy
-  :doc "Incremental Vertical completYon"
+ :doc "Incremental Vertical completYon"
   :req "emacs-24.5"
   :tag "matching" "emacs>=24.5"
   :url "https://github.com/abo-abo/swiper"
@@ -338,29 +335,6 @@
   :after prescient ivy
   :custom ((ivy-prescient-retain-classic-highlighting . t))
   :global-minor-mode t)
-
-(leaf copilot
-  :el-get "copilot-emacs/copilot"
-  :require t
-  :load-path "~/.emacs.d/el-get/copilot"
-  :config
-  (leaf dash
-    :ensure t)
-  (leaf s
-    :ensure t)
-  (leaf editorconfig
-    :ensure t)
-  (leaf f
-    :ensure t)
-  (setq copilot-executable-node "/opt/homebrew/opt/node@18/bin/node")
-  ; tabで補完
-  (defun copilot-tab ()
-    (interactive)
-    (or (copilot-accept-completion)
-        (indent-for-tab-command)))
-  (with-eval-after-load 'copilot
-   (define-key copilot-mode-map (kbd "TAB") 'copilot-tab))
-          )
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.

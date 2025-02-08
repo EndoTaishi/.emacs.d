@@ -4,14 +4,62 @@
       <v-col cols="12">
         <v-card>
           <v-card-title>
-            <v-select v-model="selectedBookId" variant="underlined" class="mr-5 p-search__select-book"
-              item-title="title" item-value="id" :items="books" :label="t('search.title')" />
-            <v-text-field v-model="editingQuery.text" variant="underlined" class="mr-2" :label="t('search.text')"
-              @keyup.enter="search" />
-            <v-text-field v-model="editingQuery.volume" variant="underlined" class="mr-2" :label="t('search.volume')"
-              type="number" />
-            <v-text-field v-model="editingQuery.chapter" variant="underlined" class="mr-2" :label="t('search.chapter')"
-              type="number" />
+            <v-select
+              v-model="selectedBookId"
+              variant="underlined"
+              class="mr-5 p-search__select-book"
+              item-title="title"
+              item-value="id"
+              :items="books"
+              :label="t('search.title')"
+            />
+            <v-text-field
+              v-model="editingQuery.text"
+              variant="underlined"
+              class="mr-2"
+              :label="t('search.text')"
+              @keyup.enter="search"
+            />
+            <div class="p-search__input-volume">
+              <v-text-field
+                v-model="editingQuery.volume_from"
+                variant="underlined"
+                class="p-search__input-volume-from"
+                :label="t('search.volume')"
+                :placeholder="t('search.placeholder')"
+                :hint="t('search.volume_hint')"
+                type="number"
+              />
+              <p class="p-search__separator">〜</p>
+              <v-text-field
+                v-model="editingQuery.volume_to"
+                variant="underlined"
+                class="p-search__input-volume-to"
+                :label="t('search.volume')"
+                :placeholder="t('search.placeholder')"
+                type="number"
+              />
+            </div>
+            <div class="p-search__input-chapter">
+              <v-text-field
+                v-model="editingQuery.chapter_from"
+                variant="underlined"
+                class="p-search__input-chapter-from"
+                :label="t('search.chapter')"
+                :placeholder="t('search.placeholder')"
+                :hint="t('search.chapter_hint')"
+                type="number"
+              />
+              <p class="p-search__separator">〜</p>
+              <v-text-field
+                v-model="editingQuery.chapter_to"
+                variant="underlined"
+                class="p-search__input-chapter-to"
+                :label="t('search.chapter')"
+                :placeholder="t('search.placeholder')"
+                type="number"
+              />
+            </div>
             <v-btn @click="search">
               <v-icon>{{ icon.mdiMagnify }}</v-icon>
             </v-btn>
@@ -24,7 +72,7 @@
               </v-expansion-panel-content>
             </v-expansion-panel>
           </v-expansion-panels> -->
-        </v-card>               
+        </v-card>
       </v-col>
     </v-row>
     <v-row class="p-search__result-header">
@@ -44,20 +92,31 @@
     </v-row>
     <v-row v-show="view == 'list'" class="p-search__listview">
       <v-col cols="7" class="p-search__listview__table">
-        <v-data-table :items-per-page="15" :headers="headers" :items="bubbles" :loading="loading" class="elevation-1"
+        <v-data-table
+          :items-per-page="15"
+          :headers="headers"
+          :items="bubbles"
+          :loading="loading"
+          :page.sync="options.page"
+          class="elevation-1"
           :footer-props="{
             'items-per-page-options': [15, 50, 100, -1],
-          }">
+          }"
+          @update:options="updateOptions"
+        >
           <!-- 'background-color': index===selectedBubbleIndex ? 'rgba(205, 102, 20, 0.3)' : null -->
           <template #item="{ item }">
-            <tr :style="{
-              cursor: 'pointer',
-              'background-color':
-                item.index === selectedBubbleIndex
-                  ? 'rgba(80, 80, 80, 1.0)'
-                  : 'white',
-              color: item.index === selectedBubbleIndex ? 'white' : 'black',
-            }" @click="onClickRow(item)">
+            <tr
+              :style="{
+                cursor: 'pointer',
+                'background-color':
+                  item.index === selectedBubbleIndex
+                    ? 'rgba(80, 80, 80, 1.0)'
+                    : 'white',
+                color: item.index === selectedBubbleIndex ? 'white' : 'black',
+              }"
+              @click="onClickRow(item)"
+            >
               <td>{{ item.chapter_index }}</td>
               <td>{{ item.page_index + 1 }}</td>
               <!-- eslint-disable-next-line vue/no-v-html -->
@@ -65,8 +124,11 @@
               <!-- eslint-disable-next-line vue/no-v-html -->
               <td v-html="textWithHighlight(item.translated_text)" />
               <td>
-                <button-with-tooltip icon :tooltip="'エディタを起動'" @click="launchEditor(item.editor_link)"><v-icon
-                    size="small"> {{ icon.mdiOpenInNew }} </v-icon>
+                <button-with-tooltip
+                  icon
+                  :tooltip="'エディタを起動'"
+                  @click="launchEditor(item.editor_link)"
+                  ><v-icon size="small"> {{ icon.mdiOpenInNew }} </v-icon>
                 </button-with-tooltip>
               </td>
             </tr>
@@ -74,12 +136,22 @@
         </v-data-table>
       </v-col>
       <v-col cols="5">
-        <div v-if="imageAvailable(selectedBubble) || selectedImageInfo !== null">
-          <searched-image v-if="imageAvailable(selectedBubble) || selectedImageInfo !== null"
-            :boxes="selectedBubble ? [selectedBubble.bounding_box] : null" :image="selectedImage" />
+        <div
+          v-if="imageAvailable(selectedBubble) || selectedImageInfo !== null"
+        >
+          <v-btn-toggle v-model="imageLang" mandatory="force">
+            <v-btn :value="'Original'"> Original </v-btn>
+            <v-btn :value="'English'"> English </v-btn>
+          </v-btn-toggle>
+          <searched-image
+            v-if="imageAvailable(selectedBubble) || selectedImageInfo !== null"
+            :boxes="selectedBubble ? [selectedBubble.bounding_box] : null"
+            :image="selectedImage"
+          />
           <div class="p-search__listview__footer">
             <v-btn icon @click="toPreviousPage">
-              <v-icon>{{ icon.mdiArrowLeft }}</v-icon></v-btn>
+              <v-icon>{{ icon.mdiArrowLeft }}</v-icon></v-btn
+            >
             {{
               selectedBubble
                 ? selectedBubble.page_index + 1
@@ -88,20 +160,36 @@
             /
             {{ totalPage }}
             <v-btn icon @click="toNextPage">
-              <v-icon>{{ icon.mdiArrowRight }}</v-icon></v-btn>
+              <v-icon>{{ icon.mdiArrowRight }}</v-icon></v-btn
+            >
           </div>
         </div>
         <!-- :image-url="selectedBubble.original_image.display_url" -->
       </v-col>
     </v-row>
     <v-row v-show="view == 'image'" class="p-search__imageview">
-      <v-col v-for="(bubble, index) in bubbles" :key="`bubble-${index}`" cols="4">
-        <v-badge color="success" :content="`Vol. ${bubble.chapter_index} P${bubble.page_index + 1}`"
-          class="p-search__imageview__badge" offset-x="75" offset-y="22" @click="launchEditor(bubble.editor_link)">
-          <searched-image v-if="imageAvailable(bubble)" :boxes="[bubble.bounding_box]" :image="imageUrlsByBookId[selectedBookId][bubble.chapter_index - 1][
-            bubble.page_index
-          ]
-            " />
+      <v-col
+        v-for="(bubble, index) in bubbles"
+        :key="`bubble-${index}`"
+        cols="4"
+      >
+        <v-badge
+          color="success"
+          :content="`Vol. ${bubble.chapter_index} P${bubble.page_index + 1}`"
+          class="p-search__imageview__badge"
+          offset-x="75"
+          offset-y="22"
+          @click="launchEditor(bubble.editor_link)"
+        >
+          <searched-image
+            v-if="imageAvailable(bubble)"
+            :boxes="[bubble.bounding_box]"
+            :image="
+              imageUrlsByBookId[selectedBookId][bubble.chapter_index - 1][
+                bubble.page_index
+              ]
+            "
+          />
         </v-badge>
         <div class="p-search__imageview__text">
           <!-- eslint-disable-next-line vue/no-v-html -->
@@ -112,7 +200,15 @@
   </v-container>
 </template>
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, inject } from 'vue';
+import {
+  ref,
+  computed,
+  onMounted,
+  onUnmounted,
+  inject,
+  watch,
+  reactive,
+} from 'vue';
 import {
   mdiMagnify,
   mdiOpenInNew,
@@ -137,7 +233,13 @@ import {
   ShortcutKeyManagerKey,
 } from '@/plugins/providedProperties';
 
+interface DataOptions {
+  itemsPerPage: number;
+  page: number;
+}
+
 type SearchResultViewType = 'list' | 'image';
+type SearchedImageLanguage = 'Original' | 'English';
 type BookBasic = {
   id: number;
   title: string;
@@ -165,13 +267,24 @@ const imageUrlsByBookId = ref<{ [field in number]?: Array<ImageSummary>[] }>(
 const bubbles = ref<SearchedBubble[]>([]);
 const loading = ref(true);
 const selectedBookId = ref<number>(null);
-const query = ref<SearchQuery>({ text: '', volume: null, chapter: null });
+const query = ref<SearchQuery>({
+  text: '',
+  volume_from: null,
+  volume_to: null,
+  chapter_from: null,
+  chapter_to: null,
+});
 const editingQuery = ref<SearchQuery>({
   text: '',
-  volume: null,
-  chapter: null,
+  volume_from: null,
+  volume_to: null,
+  chapter_from: null,
+  chapter_to: null,
 });
-
+const options = reactive<DataOptions>({
+  itemsPerPage: 15,
+  page: 1,
+});
 const headers = computed(() => [
   {
     value: 'chapter_index',
@@ -213,6 +326,7 @@ const icon = {
 };
 const user = ref<User>(null);
 const view = ref<SearchResultViewType>('list');
+const imageLang = ref<SearchedImageLanguage>('Original');
 const selectedBubbleIndex = ref<number>(null);
 const selectedImageInfo = ref<{
   chapter_index: number;
@@ -304,14 +418,26 @@ const toNextBubble = () => {
   selectedBubbleIndex.value += 1;
   if (selectedBubbleIndex.value >= bubbles.value.length) {
     selectedBubbleIndex.value = 0;
+    options.page = 1;
+  } else if (selectedBubbleIndex.value % options.itemsPerPage === 0) {
+    options.page++;
   }
 };
 const toPreviousBubble = () => {
   selectedBubbleIndex.value -= 1;
   if (selectedBubbleIndex.value < 0) {
     selectedBubbleIndex.value = bubbles.value.length - 1;
+    options.page = bubbles.value.length / options.itemsPerPage + 1;
+  } else if ((selectedBubbleIndex.value + 1) % options.itemsPerPage === 0) {
+    options.page--;
   }
 };
+
+const updateOptions = (optionsNew: DataOptions) => {
+  options.page = optionsNew.page;
+  options.itemsPerPage = optionsNew.itemsPerPage;
+};
+
 const imageAvailable = (bubble: SearchedBubble) => {
   if (!bubble) {
     return false;
@@ -329,8 +455,9 @@ const textWithHighlight = (text: string) => {
   let position = -1;
   let html = '';
   while (text && (position = text.indexOf(query1, last_position)) >= 0) {
-    html += `${text.slice(last_position, position)}<span style="color: red">${query.value.text
-      }</span>`;
+    html += `${text.slice(last_position, position)}<span style="color: red">${
+      query.value.text
+    }</span>`;
     last_position = position + query1.length;
   }
   html += text.slice(last_position);
@@ -423,6 +550,32 @@ const launchEditor = (path: string) => {
 .p-search {
   &__select-book {
     max-width: 200px;
+  }
+
+  &__input-volume {
+    display: flex;
+    align-items: center;
+  }
+
+  &__input-volume-from {
+    width: 100px;
+    margin-right: 10px;
+  }
+
+  &__input-chapter {
+    display: flex;
+    align-items: center;
+  }
+
+  &__input-chapter-from {
+    width: 100px;
+    margin-right: 10px;
+  }
+
+  &__separator {
+    margin: 0 10px;
+    font-size: 16px;
+    color: gray;
   }
 
   &__listview {

@@ -1,66 +1,47 @@
-;;; init.el --- My init.el
-
-;; Author: Taishi Endo
+;; init.el --- My init.el
+; Author: Taishi Endo
 
 ;;; Commentary:
 ;;; Code
 
-(eval-and-compile
-  (customize-set-variable
-   'package-archives '(("org" . "https://orgmode.org/elpa/")
-                       ("melpa" . "https://melpa.org/packages/")
-                       ("gnu" . "https://elpa.gnu.org/packages/")))
-  (package-initialize)
-  (unless (package-installed-p 'leaf)
-    (package-refresh-contents)
-    (package-install 'leaf))
+(setq custom-file (locate-user-emacs-file "custom.el"))
+(load custom-file :no-error-if-file-is-missing)
 
-  (leaf leaf-keywords
-    :ensure t
-    :init
-    ;; optional packages if you want to use :hydra, :el-get, :blackout,,,
-    (leaf hydra :ensure t)
-    (leaf el-get :ensure t)
-    (leaf blackout :ensure t)
+;;; Set up the package manager
 
-    :config
-    ;; initialize leaf-keywords.el
-    (leaf-keywords-init)))
-;; </leaf-install-code>
+(require 'package)
+(package-initialize)
 
-;; Now you can use leaf!
-(leaf leaf-tree :ensure t)
-(leaf leaf-convert :ensure t)
-(leaf transient-dwim
-  :ensure t
-  :bind (("M-=" . transient-dwim-dispatch)))
+(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/"))
+
+(when (< emacs-major-version 29)
+  (unless (package-installed-p 'use-package)
+    (unless package-archive-contents
+      (package-refresh-contents))
+    (package-install 'use-package)))
+
+(add-to-list 'display-buffer-alist
+             '("\\`\\*\\(Warnings\\|Compile-Log\\)\\*\\'"
+               (display-buffer-no-window)
+               (allow-no-window . t)))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 基本設定
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 ;; PATHの設定を引き継ぐ
-(leaf exec-path-from-shell
+(use-package exec-path-from-shell
   :ensure t
-  :require t
-  :defun (exec-path-from-shell-initialize)
   :config (exec-path-from-shell-initialize))
 
 ;; 起動時の画面を非表示
 (setq inhibit-startup-message t)
 
-;; 対応する括弧をハイライト
-(setq show-paren-delay 0)
-(show-paren-mode t)
-
 ;; 括弧のハイライトの設定
-(setq show-paren-style 'parenthesis)
-(set-face-attribute 'show-paren-match nil
-      :background "gray"
-      :underline 'unspecified)
-
-;; 対応する括弧を自動挿入
-(electric-pair-mode 1)
+;; (setq show-paren-style 'parenthesis)
+;; (set-face-attribute 'show-paren-match nil
+      ;; :background "gray"
+      ;; :underline 'unspecified)
 
 ;; 選択範囲をハイライト
 (set-face-attribute 'region nil
@@ -74,9 +55,7 @@
      (:background "dark slate gray"))
     (((class color)
       (background light))
-     (:background "#AAAAAA"))
-    (t
-     ()))
+     (:background "#AAAAAA")))
   "*Face used by hl-line.")
 (global-hl-line-mode t)
 
@@ -86,15 +65,6 @@
         backup-directory-alist))
 (setq auto-save-file-name-transforms
       `((".*", (expand-file-name "~/.emacs.d/backup/") t)))
-
-;; 現在位置の列数を表示
-(column-number-mode t)
-
-;; 左側に行番号表示
-(global-display-line-numbers-mode 1)
-
-;; 起動時画面フルサイズ
-(add-to-list 'default-frame-alist '(fullscreen . maximized))
 
 ;; "yes or no"の選択を"y or n"にする
 (fset 'yes-or-no-p 'y-or-n-p)
@@ -107,6 +77,11 @@
 
 (add-hook 'text-mode-hook 'turn-on-auto-fill)
 
+(menu-bar-mode 1)
+(scroll-bar-mode -1)
+(tool-bar-mode -1)
+
+(add-hook 'org-mode-hook (lambda () (auto-fill-mode -1)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; キーバインディング
@@ -129,226 +104,297 @@
 (define-key global-map (kbd "C-;") 'comment-out-current-line)
 
 ;; 選択中の入力は、regionを削除して挿入する
-(leaf delsel
-  :doc "delete selection if you insert"
-  :tag "builtin"
-  :global-minor-mode delete-selection-mode)
+(use-package delsel
+  :ensure nil
+  :hook (after-init . delete-selection-mode))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ヴィジュアルの設定
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; タブを可視化
-(leaf whitespace
-  :ensure t
-  :custom
-  ((whitespace-style . '(face
-                         trailing
-                         tabs
-                         ;; spaces
-                         ;; empty
-                         space-mark
-                         tab-mark))
-   (whitespace-display-mappings . '((tab-mark ?\t [?\u00BB ?\t] [?\\ ?\t]))))
-  :config
-  (global-whitespace-mode t))
+;; シンタックスハイライト
+(use-package treesit-auto
+    :ensure t
+    :custom
+    (treesit-auto-install 'prompt)
+    :config
+    (treesit-auto-add-to-auto-mode-alist 'all)
+    (global-treesit-auto-mode))
 
 ;; デフォルトのインデント
 (setq tab-width 4)
-(setq-default indent-tabs-mode nil)
+;; (setq-default indent-tabs-mode nil)
 
-(leaf doom-themes
+;; カッコの補完
+(use-package smartparens
   :ensure t
-  :custom ((doom-themes-enable-italic . nil)
-           (doom-themes-enable-bold . t))
+  :delight
+  :hook (after-init . smartparens-global-mode)
+  :custom (electric-pair-mode 1)
   :config
-  (load-theme 'doom-winter-is-coming-dark-blue t)
-  (doom-themes-neotree-config)
-  (doom-themes-org-config))
+  (require 'smartparens-config))
 
-;; (leaf zenburn-theme
+;; (leaf doom-themes
   ;; :ensure t
-  ;; :config (load-theme 'zenburn t))
-
-;; (leaf modus-themes
-  ;; :ensure t
-  ;; :bind ("<f5>" . modus-themes-toggle)
-  ;; :init
-  ;; (load-theme 'modus-vivendi-deuteranopia :no-confirm)
   ;; :config
-  ;; )
+  ;; (load-theme 'doom-winter-is-coming-dark-blue t)
+  ;; (doom-themes-neotree-config)
+  ;; (doom-themes-org-config)
+  ;; (custom-set-faces
+   ;; '(font-lock-comment-face ((t (:foreground "#999999")))))
+  ;; :custom ((doom-themes-enable-italic . nil)
+;; (doom-themes-enable-bold . t)))
+
+;; (use-package doom-themes
+  ;; :ensure t
+  ;; :custom
+  ;; (doom-themes-enable-italic . nil)
+  ;; (doom-themes-enable-bold . nil)
+  ;; :custom-face
+  ;; (doom-modeline-bar ((t (:background "#000000"))))
+  ;; (default ((t (:background "#282822"))))
+  ;; :config
+  ;; (load-theme 'doom-dracula t)
+;; (load-theme 'doom-winter-is-coming-dark-blue t))
+
+(use-package doom-themes
+  :ensure t
+  :custom
+  (setq doom-themes-enable-italic nil)
+  (setq doom-themes-enable-bold nil)
+  :config
+  ;; Load catppuccin theme with specific flavor
+  (use-package catppuccin-theme
+    :ensure t
+    :config
+    (setq catppuccin-flavor 'frappe)) ;; Set the flavor before loading
+  (load-theme 'catppuccin t))
+
+
+;; Nerd icons
+(use-package nerd-icons
+  :ensure t)
+
+(use-package nerd-icons-completion
+  :ensure t
+  :after marginalia
+  :config
+  (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
+
+(use-package nerd-icons-corfu
+  :ensure t
+  :after corfu
+  :config
+  (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
+
+(use-package nerd-icons-dired
+  :ensure t
+  :hook
+  (dired-mode . nerd-icons-dired-mode))
+
+(use-package pretty-speedbar
+  :ensure t
+  :config
+  (setq pretty-speedbar-font "Font Awesome 6 Free Solid"))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Org mode
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Org captureを呼び出す
+(global-set-key (kbd "C-c l") #'org-store-link)
+(global-set-key (kbd "C-c a") #'org-agenda)
+(global-set-key (kbd "C-c c") #'org-capture)
+
+(setq org-hide-leading-stars t)
+
+(use-package org
+  :ensure t
+  :custom
+  (org-agenda-files '("/Users/endotaishi/Documents/GitHub/Research-tasks/todo.org"))
+  (org-capture-templates
+   '(("n" "Note" entry
+      (file+headline "/Users/endotaishi/Documents/GitHub/Research-tasks/todo.org" "Notes")
+      "\n* %<%Y/%m/%d (%a)> [/]\n* TODO" :prepend t)))
+  (org-tag-alist '(("mantra" . ?m) ("life" . ?l))))
+
+(require 'org-habit)
+
+(setq org-todo-keywords
+      '((sequence "TODO(t)" "WAITING(w)" "|" "DONE(d)" "SUSPENDED(s)")))
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; プログラミング言語一般
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(leaf highlight-indent-guides
+(use-package highlight-indent-guides
   :ensure t
-  :blackout t
-  :hook (((prog-mode-hook comint-mode-hook) . highlight-indent-guides-mode))
-  :custom (
-           (highlight-indent-guides-method . 'character)
-           (highlight-indent-guides-auto-enabled . t)
-           (highlight-indent-guides-responsive . t)
-           (highlight-indent-guides-character . ?|)))
+  :delight
+  :hook ((prog-mode-hook . highlight-indent-guides-mode))
+  :config
+  (highlight-indent-guides-method 'character)
+  (highlight-indent-guides-auto-enabled t)
+  (highlight-indent-guides-responsive t)
+  (highlight-indent-guides-character ?\|))
 
-(leaf rainbow-delimiters
+
+(use-package rainbow-delimiters
   :ensure t
-  :hook (((prog-mode-hook comint-mode-hook) . rainbow-delimiters-mode)))
+  :hook ((prog-mode-hook . rainbow-delimiters-mode)))
 
-(leaf mwim
+(use-package mwim
   :ensure t
   :bind (("C-a" . mwim-beginning-of-code-or-line)
          ("C-e" . mwim-end-of-code-or-line)))
 
-(add-to-list 'auto-mode-alist '(("\\.ts" . typescript-ts-mode)
-                                ("\\.tsx" . typescript-ts-mode)
-                                ("\\.js" . js-ts-mode)
-                                ("\\.jsx" . typescript-ts-mode)
-                                ("\\.py" . python-ts-mode)))
+;; (add-to-list 'auto-mode-alist '("\\.py" . python-ts-mode))
 
-(add-hook 'python-ts-mode #'python-ts-mode)
+;; (add-hook 'python-ts-mode #'python-ts-mode)
+
+(use-package markdown-mode
+  :ensure t
+  :custom
+  (markdown-fontify-code-blocks-natively t)
+  ;; (setopt markdown-header-scaling t)
+  (markdown-indent-on-enter 'indent-and-new-item)
+  :config
+  (define-key markdown-mode-map (kbd "<S-tab>") #'markdown-shifttab))
+  
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; その他
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; magit
-(leaf magit
+(use-package magit
   :ensure t
-  :bind (("C-x g" . magit-status)))
+  :bind (("C-g" . magit-status)))
 
-;; flymake
-(leaf flymake
-  :doc "A universal on-the-fly syntax checker"
-  :bind ((prog-mode-map
-          ("M-n" . flymake-goto-next-error)
-          ("M-p" . flymake-goto-prev-error))))
+;; company
+(use-package company
+  :ensure t
+  :hook (after-init . global-company-mode))
 
 ;; undo-tree
-(leaf undo-tree
+(use-package undo-tree
   :ensure t
-  :leaf-defer nil
   :bind (("M-/" . undo-tree-redo))
-  :custom ((global-undo-tree-mode . t)
-           (undo-tree-auto-save-history . nil)))
-
-(leaf auto-complete
-  :ensure t
-  :leaf-defer nil
+  :hook (after-init . global-undo-tree-mode)
   :config
-  (ac-config-default)
-  :custom ((ac-use-menu-map . t)
-           (ac-ignore-case . nil))
-  :bind (:ac-mode-map
-         ("M-t" . auto-complete)))
+  (setq undo-tree-auto-save-history nil))
 
 ;; smart-mode-line
-(leaf smart-mode-line
+(use-package smart-mode-line
   :ensure t
-  :custom ((sml/no-confirm-load-theme . t)
-           (sml/theme . 'dark)
-           (sml/shorten-directory . -1))
   :config
-  (sml/setup))
-
-;; multi-term
-(leaf multi-term
-  :ensure t
-  :custom `((multi-term-program . ,(getenv "SHELL")))
-  :preface
-  (defun open-shell-sub (new)
-   (split-window-below)
-   (enlarge-window 5)
-   (other-window 1)
-   (let ((term) (res))
-     (if (or new (null (setq term (dolist (buf (buffer-list) res)
-                                    (if (string-match "*terminal<[0-9]+>*" (buffer-name buf))
-                                        (setq res buf))))))
-         (multi-term)
-       (switch-to-buffer term))))
-  (defun open-shell ()
-    (interactive)
-  (defun to-shell ()
-    (interactive)
-    (open-shell-sub nil))
-  :bind (("C-^"   . to-shell)
-         ("C-M-^" . open-shell)
-         (:term-raw-map
-          ("C-t" . other-window)))))
+  (setq sml/no-confirm-load-theme t)
+  (setq sml/theme 'light)
+  (setq sml/shorten-directory -1)  
+(sml/setup))
 
 ;; ivy
-(leaf ivy
- :doc "Incremental Vertical completYon"
-  :req "emacs-24.5"
-  :tag "matching" "emacs>=24.5"
-  :url "https://github.com/abo-abo/swiper"
-  :emacs>= 24.5
+(use-package ivy
   :ensure t
-  :blackout t
-  :leaf-defer nil
-  :custom ((ivy-initial-inputs-alist . nil)
-           (ivy-use-selectable-prompt . t))
-  :global-minor-mode t
+  :hook (after-init . ivy-mode))
+
+(use-package swiper
+  :ensure t
+  :bind ("C-s" . swiper))
+
+(use-package counsel
+   :ensure t
+   :blackout t
+   :bind (("C-S-s" . counsel-imenu)
+          ("C-x C-r" . counsel-recentf))
+   :custom `((counsel-yank-pop-separator . "\n----------\n")
+             (counsel-find-file-ignore-regexp . ,(rx-to-string '(or "./" "../") 'no-group)))
+   :hook (after-init . counsel-mode))
+
+(use-package prescient
+  :ensure t
+  :custom
+  (setq prescient-aggressive-file-save t)
+  :hook (global-minor-mode . prescient-persist-mode))
+
+(use-package ivy-prescient
+  :ensure t
+  :custom
+  (setq ivy-prescient-retain-classic-highlighting t)
+  :hook (global-minor-mode . ivy-prescient-mode))
+
+;;; Configure the minibuffer and completions
+
+(use-package vertico
+  :ensure t
+  :hook (after-init . vertico-mode))
+
+(use-package marginalia
+  :ensure t
+  :hook (after-init . marginalia-mode))
+
+(use-package orderless
+  :ensure t
   :config
-  (leaf swiper
-    :doc "Isearch with an overview. Oh, man!"
-    :req "emacs-24.5" "ivy-0.13.0"
-    :tag "matching" "emacs>=24.5"
-    :url "https://github.com/abo-abo/swiper"
-    :emacs>= 24.5
-    :ensure t
-    :bind (("C-s" . swiper)))
+  (setq completion-styles '(orderless basic))
+  (setq completion-category-defaults nil)
+  (setq completion-category-overrides nil))
 
-  (leaf counsel
-    :doc "Various completion functions using Ivy"
-    :req "emacs-24.5" "swiper-0.13.0"
-    :tag "tools" "matching" "convenience" "emacs>=24.5"
-    :url "https://github.com/abo-abo/swiper"
-    :emacs>= 24.5
-    :ensure t
-    :blackout t
-    :bind (("C-S-s" . counsel-imenu)
-           ("C-x C-r" . counsel-recentf))
-    :custom `((counsel-yank-pop-separator . "\n----------\n")
-              (counsel-find-file-ignore-regexp . ,(rx-to-string '(or "./" "../") 'no-group)))
-    :global-minor-mode t))
+(use-package savehist
+  :ensure nil ; it is built-in
+  :hook (after-init . savehist-mode))
 
-(leaf prescient
-  :doc "Better sorting and filtering"
-  :req "emacs-25.1"
-  :tag "extensions" "emacs>=25.1"
-  :url "https://github.com/raxod502/prescient.el"
-  :emacs>= 25.1
+(use-package corfu
   :ensure t
-  :custom ((prescient-aggressive-file-save . t))
-  :global-minor-mode prescient-persist-mode)
+  :hook (after-init . global-corfu-mode)
+  :bind (:map corfu-map ("<tab>" . corfu-complete))
+  :config
+  (setq tab-always-indent 'complete)
+  (setq corfu-preview-current nil)
+  (setq corfu-min-width 20)
 
-(leaf ivy-prescient
-  :doc "prescient.el + Ivy"
-  :req "emacs-25.1" "prescient-4.0" "ivy-0.11.0"
-  :tag "extensions" "emacs>=25.1"
-  :url "https://github.com/raxod502/prescient.el"
-  :emacs>= 25.1
+  (setq corfu-popupinfo-delay '(1.25 . 0.5))
+  (corfu-popupinfo-mode 1) ; shows documentation after `corfu-popupinfo-delay'
+
+  ;; Sort by input history (no need to modify `corfu-sort-function').
+  (with-eval-after-load 'savehist
+    (corfu-history-mode 1)
+    (add-to-list 'savehist-additional-variables 'corfu-history)))
+
+;;; The file manager (Dired)
+
+(use-package dired
+  :ensure nil
+  :commands (dired)
+  :hook
+  ((dired-mode . dired-hide-details-mode)
+   (dired-mode . hl-line-mode))
+  :config
+  (setq dired-recursive-copies 'always)
+  (setq dired-recursive-deletes 'always)
+  (setq delete-by-moving-to-trash t)
+  (setq dired-dwim-target t))
+
+(use-package dired-subtree
   :ensure t
-  :after prescient ivy
-  :custom ((ivy-prescient-retain-classic-highlighting . t))
-  :global-minor-mode t)
+  :after dired
+  :bind
+  ( :map dired-mode-map
+    ("<tab>" . dired-subtree-toggle)
+    ("TAB" . dired-subtree-toggle)
+    ("<backtab>" . dired-subtree-remove)
+    ("S-TAB" . dired-subtree-remove))
+  :config
+  (setq dired-subtree-use-backgrounds nil))
 
-(custom-set-variables
- ;; custom-set-variables was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- '(package-selected-packages
-   '(editorconfig dash s f ivy-prescient prescient counsel swiper ivy multi-term smart-mode-line auto-complete undo-tree zenburn-theme whitespace transient-dwim leaf-convert leaf-tree blackout el-get hydra leaf-keywords leaf)))
-(custom-set-faces
- ;; custom-set-faces was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- )
+(use-package trashed
+  :ensure t
+  :commands (trashed)
+  :config
+  (setq trashed-action-confirmer 'y-or-n-p)
+  (setq trashed-use-header-line t)
+  (setq trashed-sort-key '("Date deleted" . t))
+  (setq trashed-date-format "%Y-%m-%d %H:%M:%S"))
 
 (provide 'init)
 

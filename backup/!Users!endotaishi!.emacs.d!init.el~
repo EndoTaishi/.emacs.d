@@ -57,7 +57,7 @@
 (setq show-paren-style 'parenthesis)
 (set-face-attribute 'show-paren-match nil
       :background "gray"
-      :underline 'unspecified);
+      :underline 'unspecified)
 
 ;; 対応する括弧を自動挿入
 (electric-pair-mode 1)
@@ -114,7 +114,9 @@
 
 (define-key global-map (kbd "C-t") 'other-window) ; ウィンドウ切り替え
 (define-key global-map (kbd "C-x f") 'find-file) ; C-x C-f と同等
-(define-key global-map (kbd "C-h") 'backward-delete-char)
+(define-key global-map (kbd "C-h") 'backward-delete-char) ; C-h でバックスペース
+(define-key global-map (kbd "C-x ?") 'help-command) ; C-x ? でヘルプを表示
+
 
 ;; 単体行コメントアウト用コマンド
 (defun comment-out-current-line ()
@@ -124,7 +126,7 @@
   (set-mark-command nil)
   (move-end-of-line 1)
   (comment-dwim nil))
-(global-set-key (kbd "C-;") 'comment-out-current-line)
+(define-key global-map (kbd "C-;") 'comment-out-current-line)
 
 ;; 選択中の入力は、regionを削除して挿入する
 (leaf delsel
@@ -136,6 +138,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ヴィジュアルの設定
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; シンタックスハイライト
+(leaf treesit-auto
+  :ensure t)
 
 ;; タブを可視化
 (leaf whitespace
@@ -156,26 +162,34 @@
 (setq tab-width 4)
 (setq-default indent-tabs-mode nil)
 
-(leaf doom-themes
-  :ensure t
-  :custom ((doom-themes-enable-italic . nil)
-           (doom-themes-enable-bold . t))
-  :config
-  (load-theme 'doom-winter-is-coming-dark-blue t)
-  (doom-themes-neotree-config)
-  (doom-themes-org-config))
-
-;; (leaf zenburn-theme
+;; (leaf doom-themes
   ;; :ensure t
-  ;; :config (load-theme 'zenburn t))
-
-;; (leaf modus-themes
-  ;; :ensure t
-  ;; :bind ("<f5>" . modus-themes-toggle)
-  ;; :init
-  ;; (load-theme 'modus-vivendi-deuteranopia :no-confirm)
   ;; :config
-  ;; )
+  ;; (load-theme 'doom-winter-is-coming-dark-blue t)
+  ;; (doom-themes-neotree-config)
+  ;; (doom-themes-org-config)
+  ;; (custom-set-faces
+   ;; '(font-lock-comment-face ((t (:foreground "#999999")))))
+  ;; :custom ((doom-themes-enable-italic . nil)
+           ;; (doom-themes-enable-bold . t)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Org mode
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Org captureを呼び出す
+(global-set-key (kbd "C-c l") #'org-store-link)
+(global-set-key (kbd "C-c a") #'org-agenda)
+(global-set-key (kbd "C-c c") #'org-capture)
+
+(use-package org
+  :ensure t
+  :custom
+  (org-agenda-files '("~/Documents/notes.org"))
+  (org-capture-templates
+   '(("n" "Note" entry
+      (file+headline "~/Documents/notes.org" "Notes")
+      "\n* %<%Y/%m/%d (%a)> [/]\n* TODO" :prepend t))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -201,12 +215,22 @@
   :bind (("C-a" . mwim-beginning-of-code-or-line)
          ("C-e" . mwim-end-of-code-or-line)))
 
-;; prog-modeでcopilotを有効にする
-(add-hook 'prog-mode-hook 'copilot-mode)
+(add-to-list 'auto-mode-alist '(("\\.ts" . typescript-ts-mode)
+                                ("\\.tsx" . typescript-ts-mode)
+                                ("\\.js" . js-ts-mode)
+                                ("\\.jsx" . typescript-ts-mode)
+                                ("\\.py" . python-ts-mode)))
+
+(add-hook 'python-ts-mode #'python-ts-mode)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; その他
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; magit
+(leaf magit
+  :ensure t
+  :bind (("C-x g" . magit-status)))
+
 ;; flymake
 (leaf flymake
   :doc "A universal on-the-fly syntax checker"
@@ -222,7 +246,6 @@
   :custom ((global-undo-tree-mode . t)
            (undo-tree-auto-save-history . nil)))
 
-;; auto-complete
 (leaf auto-complete
   :ensure t
   :leaf-defer nil
@@ -231,7 +254,6 @@
   :custom ((ac-use-menu-map . t)
            (ac-ignore-case . nil))
   :bind (:ac-mode-map
-         ; ("M-TAB" . auto-complete))
          ("M-t" . auto-complete)))
 
 ;; smart-mode-line
@@ -243,34 +265,44 @@
   :config
   (sml/setup))
 
-;; multi-term
 (leaf multi-term
   :ensure t
   :custom `((multi-term-program . ,(getenv "SHELL")))
   :preface
-  (defun open-shell-sub (new)
-   (split-window-below)
-   (enlarge-window 5)
-   (other-window 1)
-   (let ((term) (res))
-     (if (or new (null (setq term (dolist (buf (buffer-list) res)
-                                    (if (string-match "*terminal<[0-9]+>*" (buffer-name buf))
-                                        (setq res buf))))))
-         (multi-term)
-       (switch-to-buffer term))))
+ (defun open-shell-sub (new)
+    ;; 最初のシェルは下半分に表示、次からは横に分割
+    (if (and (not new) (get-buffer-window "*terminal<1>*"))
+        ;; 既に下半分にシェルがある場合は横に分割
+        (progn
+          (select-window (get-buffer-window "*terminal<1>*"))
+          (split-window-right)
+          (other-window 1))
+      ;; 初めて開く場合は下半分に分割
+      (split-window-below)
+      (enlarge-window 5)
+      (other-window 1))
+    ;; シェルを開く・または既存のものを切り替える
+    (let ((term) (res))
+      (if (or new (null (setq term (dolist (buf (buffer-list) res)
+                                     (if (string-match "*terminal<[0-9]+>*" (buffer-name buf))
+                                         (setq res buf))))))
+          (multi-term)
+        (switch-to-buffer term))))
   (defun open-shell ()
     (interactive)
+    (open-shell-sub t))
   (defun to-shell ()
     (interactive)
     (open-shell-sub nil))
   :bind (("C-^"   . to-shell)
          ("C-M-^" . open-shell)
          (:term-raw-map
-          ("C-t" . other-window)))))
+          ("C-t" . other-window))))
+
 
 ;; ivy
 (leaf ivy
-  :doc "Incremental Vertical completYon"
+ :doc "Incremental Vertical completYon"
   :req "emacs-24.5"
   :tag "matching" "emacs>=24.5"
   :url "https://github.com/abo-abo/swiper"
@@ -326,36 +358,19 @@
   :custom ((ivy-prescient-retain-classic-highlighting . t))
   :global-minor-mode t)
 
-(leaf copilot
-  :el-get "copilot-emacs/copilot"
-  :require t
-  :load-path "~/.emacs.d/el-get/copilot"
-  :config
-  (leaf dash
-    :ensure t)
-  (leaf s
-    :ensure t)
-  (leaf editorconfig
-    :ensure t)
-  (leaf f
-    :ensure t)
-  (setq copilot-executable-node "/opt/homebrew/opt/node@18/bin/node")
-  ; tabで補完
-  (defun copilot-tab ()
-    (interactive)
-    (or (copilot-accept-completion)
-        (indent-for-tab-command)))
-  (with-eval-after-load 'copilot
-   (define-key copilot-mode-map (kbd "TAB") 'copilot-tab))
-          )
-
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
+ '(custom-safe-themes
+   '("1b635949fe819c4d90a2d151174d0ab57c44889d3d2f09fd04d239a4baff12fb" "c5801b68568b59976a8e58104c40c9b052d46cca72e367c2e43c1f36a9e79abb" default))
+ '(org-capture-templates
+   '(("n" "Note" entry
+      (file+headline "~/Documents/notes.org" "Notes")
+      "\12* %<%Y/%m/%d (%a)> [/]\12* TODO" :prepend t)) nil nil "Customized with use-package org")
  '(package-selected-packages
-   '(editorconfig dash s f ivy-prescient prescient counsel swiper ivy multi-term smart-mode-line auto-complete undo-tree zenburn-theme whitespace transient-dwim leaf-convert leaf-tree blackout el-get hydra leaf-keywords leaf)))
+   '(darcula-theme editorconfig dash s f ivy-prescient prescient counsel swiper ivy multi-term smart-mode-line auto-complete undo-tree zenburn-theme whitespace transient-dwim leaf-convert leaf-tree blackout el-get hydra leaf-keywords leaf)))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.

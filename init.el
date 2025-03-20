@@ -112,6 +112,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ヴィジュアルの設定
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Zen mode
+(use-package centered-window
+  :ensure t
+  :hook (after-init . centered-window-mode))
 
 ;; シンタックスハイライト
 (use-package treesit-auto
@@ -211,17 +215,21 @@
 (use-package org
   :ensure t
   :custom
-  (org-agenda-files '("/Users/endotaishi/Documents/GitHub/Research-tasks/todo.org"))
   (org-capture-templates
-   '(("n" "Note" entry
-      (file+headline "/Users/endotaishi/Documents/GitHub/Research-tasks/todo.org" "Notes")
-      "\n* %<%Y/%m/%d (%a)> [/]\n* TODO" :prepend t)))
-  (org-tag-alist '(("mantra" . ?m) ("life" . ?l))))
+   '(("t" "Task" entry
+      (file+headline "/Users/endotaishi/Documents/tasks.org" "INBOX")
+      "* TODO %?\n  %U\n  %i\n  %a" :prepend t)
+     ("n" "Note" entry
+      (file+headline "/Users/endotaishi/Documents/notes.org" "Notes")
+      "* %?\n  Entered on %U\n  %i\n  %a" :prepend t)))
+  (org-agenda-files '("/Users/endotaishi/Documents/tasks.org"
+                      "/Users/endotaishi/Documents/notes.org"))
+  (org-tag-alist '(("mantra" . ?m) ("life" . ?l) ("research" . ?r))))
 
 (require 'org-habit)
 
 (setq org-todo-keywords
-      '((sequence "TODO(t)" "WAITING(w)" "|" "DONE(d)" "SUSPENDED(s)")))
+      '((sequence "TODO(t)" "NEXT(n)" "WAITING(w)" "|" "DONE(d)" "SUSPENDED(s)" "CANCELLED(c)")))
 
 
 
@@ -269,7 +277,7 @@
 ;; magit
 (use-package magit
   :ensure t
-  :bind (("C-g" . magit-status)))
+  :bind (("C-x g" . magit-status)))
 
 ;; company
 (use-package company

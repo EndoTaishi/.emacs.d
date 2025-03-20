@@ -1,0 +1,94 @@
+<template>
+  <div>
+    <div v-if="isValidFormat" class="searched-image">
+      <v-img
+        v-if="isValidFormat"
+        class="d-inline-flex text-white align-end searched-image__image"
+        :src="image.url"
+        width="100%"
+        @load="loadedRef = true"
+      >
+        <template #placeholder>
+          <v-row class="fill-height ma-0" align="center" justify="center">
+            <v-progress-circular indeterminate color="grey" />
+          </v-row>
+        </template>
+        <template v-for="(scopedSlot, slot) in $slots" :slot="slot">
+          ><slot :name="slot" v-bind="scopedSlot.props"
+        /></template>
+      </v-img>
+      <div v-show="loadedRef" class="searched-image__boxes">
+        <div
+          v-for="(box, index) of boxes"
+          :key="index"
+          class="searched-image__boxes__box"
+          :style="{
+            top: `${Math.round((box.y / image.height) * 100 - 2)}%`,
+            left: `${Math.round((box.x / image.width) * 100 - 2)}%`,
+            width: `${Math.round((box.w / image.width) * 100 + 4)}%`,
+            height: `${Math.round((box.h / image.height) * 100 + 4)}%`,
+          }"
+        ></div>
+      </div>
+    </div>
+    <div v-else>
+      <div class="unsupported-format-box">
+        {{ t('image.unsupported_format') }}
+      </div>
+    </div>
+  </div>
+</template>
+<script setup lang="ts">
+import { computed, PropType, ref } from 'vue';
+import { BoundingBox, ImageSummary } from '@/models';
+import { getExtension } from '@/utils/utils';
+import { useI18n } from 'vue-i18n';
+
+const $props = defineProps({
+  boxes: {
+    type: Array as PropType<BoundingBox[]>,
+    default: () => [],
+  },
+  image: {
+    type: Object as PropType<ImageSummary>,
+    required: true,
+  },
+  loaded: {
+    type: Boolean,
+    default: false,
+  },
+});
+
+const { t } = useI18n();
+const $slots = defineSlots();
+
+const loadedRef = ref($props.loaded);
+
+const isValidFormat = computed(() => {
+  const invalidExtensions = ['.psd', '.psb'];
+  return !invalidExtensions.includes(getExtension($props.image.url));
+});
+</script>
+<style lang="scss" scoped>
+.unsupported-format-box {
+  margin: 10px;
+  padding: 30px;
+  text-align: center;
+  font-size: 12px;
+  color: #999;
+}
+.searched-image {
+  position: relative;
+  &__boxes {
+    top: 0;
+    height: 100%;
+    width: 100%;
+    position: absolute;
+    &__box {
+      position: absolute;
+      border: 3px solid rgba(255, 102, 0, 0.6);
+      background-color: rgba(255, 102, 0, 0.1);
+    }
+  }
+}
+</style>

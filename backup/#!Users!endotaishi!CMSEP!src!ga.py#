@@ -1,0 +1,165 @@
+import os
+import random
+from concurrent.futures import ProcessPoolExecutor
+from typing import List, Tuple
+
+import numpy as np
+import pandas as pd
+from sklearn.metrics import mean_squared_error
+
+from VegetationProductivityModelGA import main as cmsep
+
+site = "JP-MBF"
+pft = "DBF"
+start_year = 2003
+end_year = 2005
+
+# パラメータ推定のための遺伝的アルゴリズム部分の実装
+
+# 適応度関数：CMSEPシミュレーション結果と観測データの誤差を評価
+
+
+def compute_fitness(params: Tuple[float]) -> float:
+    # 左0埋めで5桁のランダムなIDを生成
+    random_seed = f"{random.randint(0, 99999):05d}"
+
+    print(f"=== id: {random_seed}, computing fitness for {params} ===")
+
+    # cmsep関数を使ってシミュレーションを実行
+    cmsep(*params, random_seed)
+    print(f"=== id: {random_seed}, done computing fitness for {params} ===")
+
+    # ファイルを読み込んで、観測データとの誤差の計算
+    mse_list = [
+        (lambda df: mean_squared_error(df[1], df[2]))(
+            pd.read_csv(
+                f"./../out/GA/FLX/{pft}/{site}/{year}/{random_seed}/daily/daily_{year}.csv",
+                header=None,
+            )
+        )
+        for year in range(start_year, end_year + 1)
+    ]
+    mse_ave = np.mean(mse_list)
+    return 1 / (mse_ave + 1e-6)  # 適応度はMSEの逆数
+
+
+# 初期集団を生成（ランダムなパラメータの組み合わせ）
+
+
+def generate_population(size: int) -> list[Tuple[float]]:
+    population = [(0.005, 1.1)]
+    for _ in range(size - 1):
+        # 2つのパラメータをそれぞれランダムに生成
+        loss_rate_W_max = random.uniform(0, 0.1)
+        b_W = random.uniform(1, 5)
+
+        population.append((loss_rate_W_max, b_W))
+    return population
+
+
+# 親選択（ルーレット選択）
+
+
+def select_parents(
+    population: List[Tuple[float]], fitness_scores: List[float]
+) -> (Tuple[float], Tuple[float]):
+    total_fitness = sum(fitness_scores)
+    selection_probs = [f / total_fitness for f in fitness_scores]
+    parent_indices = np.random.choice(range(len(population)), size=2, p=selection_probs)
+    return population[parent_indices[0]], population[parent_indices[1]]
+
+
+# 交叉
+
+
+def crossover(parent1: float, parent2: float) -> float:
+    # パラメータごとに交叉
+    child = (parent1 + parent2) / 2  # 単純な平均交叉
+    return child
+
+
+# 突然変異
+
+
+def mutate(child: float, mutation_rate: float) -> float:
+    if random.random() < mutation_rate:
+        child = child + np.random.uniform(-1, 1)  # 突然変異を加える
+    return child
+
+
+# 集団と適応度履歴をファイルに書き込む関数
+
+
+def save_population_to_file(
+    filename: str, population_history: List[list[Tuple[float]]], fitness_history: List
+) -> None:
+    with open(filename, "a") as output:
+        for generation, population in enumerate(population_history):
+            print(f"=== 世代 {generation + 1} の集団 ===\n", file=output)
+            for i, individual in enumerate(population):
+                print(f"個体 {i + 1}: パラメータ {individual}\n", file=output)
+        print("\n=== 適応度の履歴 ===\n", file=output)
+        for i, fitness in enumerate(fitness_history):
+            print(f"世代 {i + 1}: 最良適応度 {fitness}\n", output)
+
+
+# 遺伝的アルゴリズムの実行
+
+
+def genetic_algorithm(
+    population_size: int, n_generations: int, mutation_rate: float, output_filename: str
+) -> (Tuple[float], list[float]):
+    population = generate_population(population_size)
+    best_fitness_history = []
+    for generation in range(n_generations):
+        print(f"=== 世代 {generation + 1} ===")
+
+        # 各個体の適応度を計算
+        with ProcessPoolExecutor() as executor:
+            fitness_scores = list(executor.map(compute_fitness, population))
+
+        with open(output_filename, "a") as f:
+            for i, individual in enumerate(population):
+                print(f"{individual[0]},{individual[1]},{fitness_scores[i]}", file=f)
+
+        # 最良の個体を記録
+        best_fitness = max(fitness_scores)
+        best_fitness_history.append(best_fitness)
+
+        # 次世代の生成
+        new_population = []
+        for _ in range(population_size // 2):
+            parent1, parent2 = select_parents(population, fitness_scores)
+            child1 = mutate(crossover(parent1[0], parent2[0]), mutation_rate)
+            child2 = mutate(crossover(parent1[1], parent2[1]), mutation_rate)
+            new_population.extend([(child1, child2)])
+
+        population = new_population
+
+    # 最終世代で最良の個体を返す
+    best_individual = population[np.argmax(fitness_scores)]
+
+    return best_individual, best_fitness_history
+
+
+# メイン関数
+if __name__ == "__main__":
+    # 遺伝的アルゴリズムの設定
+    population_size = 10  # 個体数
+    n_generations = 50  # 世代数
+    mutation_rate = 0.1  # 突然変異率
+    output_filename = "./../out/GA/ga-history/history.csv"  # 結果を保存するファイル名
+
+    if os.path.isfile(output_filename):
+        os.remove(output_filename)
+    with open(output_filename, "w") as f:
+        pass
+
+    # 遺伝的アルゴリズムを実行
+    best_params, fitness_history = genetic_algorithm(
+        population_size, n_generations, mutation_rate, output_filename
+    )
+
+    # 最適なパラメータとその適応度を表示
+    print(f"最適なパラメータ: {best_params}")
+    print(f"適応度の履歴: {fitness_history}")

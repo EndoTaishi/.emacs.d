@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# Required.parameters:
+# @raycast.schemaVersion 1
+# @raycast.title DeepL
+# @raycast.mode compact
+
+# Optional parameters:
+# @raycast.argument1 {"type": "text", "placeholder": "Input ..."}
+
+# Documentation:
+# @raycast.author Taishi Endo
+# @raycast.authorURL https://endotaishi.com
+
+current_time=$(date +"%H:%M")
+memo=$(echo "$1" | sed 's/ /%20/g' )
+open --background "obsidian://advanced-uri?vault=Documents&daily=true&mode=append&data=-%20$current_time%20$memo"

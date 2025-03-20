@@ -1,0 +1,166 @@
+;; Pull all auto-generated configurations in a separate file
+
+(setq custom-file (locate-user-emacs-file "custom.el"))
+(load custom-file :no-error-if-file-is-missing)
+
+
+;; Set up the package manager
+
+(require 'package)  ;; load the package manager
+(package-initialize)  ;; initialize the installed packages
+
+(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/"))  ;; Add the MELPA repo
+
+
+;; Set up use-package
+
+(when (< emacs-major-version 29)
+  (unless (package-installed-p 'use-package)
+    (unless package-archive-contents
+      (package-refresh-content))
+    (package-install 'use-package)))
+
+
+;; Don't show warnings when installing packages
+
+(add-to-list 'display-buffer-alist
+	     '("\\'\\*\\(Warnings\\|Compile-Log\\)\\*\\'"
+	       (display-buffer-no-window)
+	       (allow-no-window . t)))
+
+
+;; Delete the selected text upon text insertion
+
+(use-package delsel
+  :ensure nil ; no need to install it as it is built-in
+  :hook (after-init . delete-selection-mode))
+
+
+;; Make C-g a bit more helpful
+
+(defun entai/keyboard-quit-dwim ()  ;; define a new command 
+  (interactive)  ;; call with M-x or a key binding
+  (cond
+   ((region-active-p)  ;; when the region is active, disable it
+    (keyboard-quit))
+   ((derived-mode-p 'completion-list-mode)
+    (delete-completion-window))
+   ((> (minibuffer-depth) 0)
+    (abort-recursive-edit))
+   (t
+    (keyboard-quit))))
+
+(define-key global-map (kbd "C-g") #'entai/keyboard-quit-dwim)
+
+
+;; Decide what to do with the graphical bars
+
+(menu-bar-mode 1)
+(scroll-bar-mode -1)
+(tool-bar-mode -1)
+
+
+;; Choose a theme and tweak the looks of Emacs
+
+(use-package ef-themes
+  :ensure t
+  :config
+  (load-theme 'ef-deuteranopia-dark :no-confirm-loading))
+
+
+;; Use icon fonts in various places
+
+(use-package nerd-icons
+  :ensure t)
+
+(use-package nerd-icons-completion
+  :ensure t
+  :after marginalia
+  :config
+  (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
+
+(use-package nerd-icons-corfu
+  :ensure t
+  :after corfu
+  :config
+  (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
+
+
+(use-package nerd-icons-dired
+  :ensure t
+  :hook
+  (dired-mode . nerd-icons-dired-mode))
+
+
+;; Config the minibuffer and related
+
+(use-package vertico  ;; produce a vertical layout of minibuffer
+  :ensure t
+  :hook (after-init . vertico-mode))
+
+(use-package marginalia  ;; provide a nice complement to the vertical layout
+  :ensure t
+  :hook (after-init . marginalia-mode))
+
+(use-package orderless  ;; matches the space-separated characters
+  :ensure t
+  :config
+  (setq completion-styles '(orderless basic))
+  (setq completion-category-defaults nil)
+  (setq completion-category-overrides nil))
+
+(use-package savehist  ;; keep a record of inputs across sessions
+  :ensure nil
+  :hook (after-init . savehist-mode))
+
+(use-package corfu
+  :ensure t
+  :hook (after-init . global-corfu-mode)
+  :bind (:map corfu-map ("<tab>" . corfu-complete))
+  :config
+  (setq tab-always-indent 'complete)
+  (setq corfu-preview-current nil)
+  (setq corfu-min-width 20)
+
+  (setq corfu-popupinfo-delay '(1.25 . 0.5))
+  (corfu-popupinfo-mode 1)
+
+  (with-eval-after-load 'savehist
+    (corfu-history-mode 1)
+    (add-to-list 'savehist-additional-variables 'corfu-history)))
+
+
+;; Tweak the dired Emacs file manager
+
+(use-package dired
+  :ensure nil
+  :commands (dired)
+  :hook
+  ((dired-mode . dired-hide-details-mode)
+   (dired-mdoe . hl-line-mode))
+  :config
+  (setq dired-recursive-copies 'always)
+  (setq dired-recursive-deletes 'always)
+  (setq delete-by-moving-to-trash t)
+  (setq dired-dwim-target t))
+
+(use-package dired-subtree
+  :ensure t
+  :after dired
+  :bind
+  ( :map dired-mode-map
+    ("<tab>" . dired-subtree-toggle)
+    ("TAB" . dired-subtree-toggle)
+    ("<backtab>" . dired-subtree-remove)
+    ("<S-TAB>" . dired-subtree-remove))
+  :config
+  (setq dired-subtree-use-background nil))
+
+(use-package trashed
+  :ensure t
+  :commands (trashed)
+  :config
+  (setq trashed-action-confirmer 'y-or-n-p)
+  (setq trashed-use-header-line t)
+  (setq trashed-sort-key '("Date deleted" . t))
+  (setq trashed-date-format "%Y-%m-%d %H:%M:%S"))

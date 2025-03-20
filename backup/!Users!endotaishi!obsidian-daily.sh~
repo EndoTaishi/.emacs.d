@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Required parameters:
+# @raycast.schemaVersion 1
+# @raycast.title Obsidian Daily
+# @raycast.mode compact
+
+# Optional parameters:
+# @raycast.icon 🤖
+
+# Documentation:
+# @raycast.author Taishi Endo
+# @raycast.authorURL https://endotaishi.com
+
+echo "Hello World!"
+

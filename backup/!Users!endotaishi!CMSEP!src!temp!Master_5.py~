@@ -1,0 +1,161 @@
+import glob
+import sys
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from sklearn.metrics import mean_squared_error, r2_score
+
+# パス設定
+sys.path.append("/Users/endotaishi/CMSEP/src/")
+files = glob.glob("./../../out/FLUXNET/*/*/[0-9]*/daily/daily_*.csv")
+
+# PFTごとにファイルを整理
+pft_sites = {}
+for file_path in files:
+    pft = file_path.split("/")[5]
+    site = file_path.split("/")[6]
+    if pft not in pft_sites:
+        pft_sites[pft] = set()
+    pft_sites[pft].add(site)
+
+pft_sites = {
+    "DBF": {
+        "Tem": ["FR-Fon", "IT-Col", "IT-Ro1", "IT-Ro2"],
+        "Bor": ["US-Ha1", "CA-Oas", "DE-Hai", "JP-MBF"],
+    },
+    "EBF": {
+        "Tem": ["AU-Tum", "AU-Wac", "AU-Wom"],
+        "Tor": ["AU-Rob", "BR-Sa3", "CN-Din"],
+    },
+}
+
+# PFTごとにプロット
+for pft, climates in sorted(pft_sites.items()):  # PFTごとにサイトを処理
+    k = 1
+    for climate, sites in sorted(climates.items()):  # 気候区分ごとにサイトを処理
+        fig, axes = plt.subplots(len(sites), 1, figsize=(6, 8), sharex=True)
+        fig.subplots_adjust(hspace=0.5)
+        axes = np.atleast_1d(axes)  # サイトが1つの場合でもaxesを配列として扱う
+
+        for i, site in enumerate(sorted(sites)):
+            file_paths = glob.glob(f"./../../out/FLUXNET Master/*/{site}/[0-9]*/daily/daily_*.csv")
+            atsumi_file_paths = glob.glob(
+                f"./../../out/FLUXNET atsumi/*/{site}/[0-9]*/daily/daily_*.csv"
+            )
+            obs_file_paths = glob.glob(f"./../../out/FLUXNET/*/{site}/[0-9]*/daily/daily_*.csv")
+            start_year = min(int(path.split("/")[7]) for path in file_paths)
+            end_year = max(int(path.split("/")[7]) for path in file_paths)
+
+            gpp_obs_mean = np.zeros(12)
+            gpp_obs_std = np.zeros(12)
+            gpp_est_mean = np.zeros(12)
+            gpp_est_std = np.zeros(12)
+            gpp_atsumi_mean = np.zeros(12)
+            gpp_atsumi_std = np.zeros(12)
+
+            # 月ごとの平均と標準偏差を計算
+            for file_path in file_paths:
+                df = pd.read_csv(file_path, header=None)
+                for month in range(12):
+                    start_day = sum([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][:month])
+                    end_day = start_day + [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month]
+                    # gpp_obs_mean[month] = np.mean(df[1][start_day:end_day]) * 0.001 * 30
+                    # gpp_obs_std[month] = np.std(df[1][start_day:end_day]) * 0.001 * 30
+                    gpp_est_mean[month] = np.mean(df[2][start_day:end_day]) * 0.001 * 30
+                    gpp_est_std[month] = np.std(df[2][start_day:end_day]) * 0.001 * 30
+
+            for file_path in atsumi_file_paths:
+                df = pd.read_csv(file_path, header=None)
+                for month in range(12):
+                    start_day = sum([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][:month])
+                    end_day = start_day + [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month]
+                    gpp_atsumi_mean[month] = np.mean(df[2][start_day:end_day]) * 0.001 * 30
+                    gpp_atsumi_std[month] = np.std(df[2][start_day:end_day]) * 0.001 * 30
+
+            for file_path in obs_file_paths:
+                df = pd.read_csv(file_path, header=None)
+                for month in range(12):
+                    start_day = sum([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][:month])
+                    end_day = start_day + [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month]
+                    gpp_obs_mean[month] = np.mean(df[1][start_day:end_day]) * 0.001 * 30
+                    gpp_obs_std[month] = np.std(df[1][start_day:end_day]) * 0.001 * 30
+
+            # 評価指標
+            r2 = r2_score(gpp_obs_mean, gpp_est_mean)
+            mse = mean_squared_error(gpp_obs_mean, gpp_est_mean)
+            rmse = np.sqrt(mse)
+            print(f"{site}, {pft}, RMSE: {rmse:.2f}, R^2: {r2:.2f}")
+
+            # プロット
+            ax = axes[i]
+            ax.plot(gpp_obs_mean, color="black", linewidth=0.7, label="Observed")
+            ax.errorbar(
+                range(12),
+                gpp_obs_mean,
+                yerr=gpp_obs_std,
+                fmt="x",
+                color="black",
+                markersize=3,
+                capsize=3,
+            )
+            ax.plot(gpp_est_mean, color="green", linewidth=0.7, label="GA optimum", linestyle="--")
+            ax.errorbar(
+                range(12),
+                gpp_est_mean,
+                yerr=gpp_est_std,
+                fmt="x",
+                color="green",
+                markersize=5,
+                capsize=3,
+            )
+            ax.plot(gpp_atsumi_mean, color="red", linewidth=0.7, label="Original", linestyle="--")
+            ax.errorbar(
+                range(12),
+                gpp_atsumi_mean,
+                yerr=gpp_atsumi_std,
+                fmt="x",
+                color="red",
+                markersize=3,
+                capsize=3,
+            )
+
+            ax.set_xticks(range(0, 12, 1))
+            ax.set_xticklabels(
+                [
+                    "Jan",
+                    "Feb",
+                    "Mar",
+                    "Apr",
+                    "May",
+                    "Jun",
+                    "Jul",
+                    "Aug",
+                    "Sep",
+                    "Oct",
+                    "Nov",
+                    "Dec",
+                ]
+            )
+            ax.set_xlim(0, 11)
+            ax.set_ylim(-0.05, 0.6)
+            ax.set_title(f"{site} ({start_year}-{end_year})", fontsize=8, loc="left", pad=-20)
+            ax.grid(True, linewidth=0.5)
+
+        # 共通の凡例を追加
+        # handles, labels = axes[0].get_legend_handles_labels()
+        # fig.legend(handles, labels, loc="upper right")
+        fig.supylabel(
+            f"Seasonal GPP for {pft}-{climate} (kgCm$^{{-2}}$month$^{{-1}}$)", fontsize=12
+        )
+        fig.supxlabel("Month", fontsize=12)
+
+        # PDF保存
+        # plt.savefig(
+        #     f"/Users/endotaishi/Desktop/Figure{k}-GPP_{pft}_{climate}.pdf",
+        #     format="pdf",
+        # )
+        plt.show()
+        k += 1
+
+plt.close("all")

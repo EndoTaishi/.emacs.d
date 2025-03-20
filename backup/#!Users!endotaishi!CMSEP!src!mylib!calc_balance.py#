@@ -1,0 +1,1585 @@
+import math
+
+import numpy as np
+from numba import jit
+
+
+def LAdistribution(N_layer, d_z_h, alpha, beta, leaf_type, height_c, LAI):
+    x = d_z_h * (2 * np.arange(1, N_layer + 1) - 1) / 2
+    beta_distribution = x ** (alpha[leaf_type] - 1) * (1 - x) ** (beta[leaf_type] - 1)
+
+    f_list = beta_distribution / (np.sum(beta_distribution * d_z_h)) * LAI  # (m^2/m^2)
+    d_LA = f_list * d_z_h  # (m^2/m^2)
+
+    d_LA = np.append(0, d_LA)
+
+    return d_LA
+
+
+def ExtinctionCoeffcientFunction(var1, var2):  # 一般の葉群における群落光合成
+    return (1 - math.exp(-var2 * var1)) / var2
+
+
+def IB(I_b, d_LA, H, N_angle, N2_angle):
+    G_layer = GLayer(N_angle, N2_angle, H)
+    I_b = 1 - G_layer * d_LA / math.sin(H)
+    I_b = np.maximum(0, np.minimum(I_b, 1))
+
+    return I_b, G_layer
+
+
+def ID(I_d, I_b, d_LA, N_angle, N2_angle):
+    d_angle = math.pi / 2 / N_angle
+    x = d_angle * (2 * np.arange(1, N_angle + 1) - 1) / 2  # [1, 2, 3, ..., N+1]
+
+    for x_value in x:
+        I_b, _ = IB(I_b, d_LA, x_value, N_angle, N2_angle)
+        I_d += I_b * np.sin(x_value) * np.cos(x_value) * d_angle
+    I_d *= 2
+    I_d = np.maximum(0, np.minimum(I_d, 1))
+    return I_d
+
+
+def GLayer(N_angle, N2_angle, H):
+    angle_ave = 50 * math.pi / 180
+    angle_SD = 18 * math.pi / 180
+
+    d_angle = math.pi / 2 / N_angle
+    d2_angle = 2 * math.pi / N2_angle
+
+    leaf_inclinations = d_angle * (2 * np.arange(1, N_angle + 1) - 1) / 2
+    g_alpha = (
+        1
+        / (angle_SD * math.sqrt(2 * math.pi))
+        * np.exp(-((leaf_inclinations - angle_ave) ** 2) / (2 * angle_SD**2))
+    )
+
+    leaf_orientation_angles = d2_angle * (2 * np.arange(1, N2_angle + 1) - 1) / 2
+
+    cos_alpha = np.cos(leaf_inclinations).reshape(-1, 1)
+    sin_alpha = np.sin(leaf_inclinations).reshape(-1, 1)
+    cos_beta = np.cos(leaf_orientation_angles).reshape(1, -1)
+
+    G_leaf = np.abs(cos_alpha * np.sin(H) + sin_alpha * cos_beta * np.cos(H))
+
+    G_layer0 = np.sum(G_leaf * g_alpha.reshape(-1, 1) * d_angle)
+    G_layer = G_layer0 * d2_angle / (2 * math.pi)
+
+    return G_layer
+
+
+def CalI(N_layer, solar_elevation, N_angle, N2_angle, d_LA):
+    I_b = np.zeros(N_layer + 1)
+    I_d = np.zeros(N_layer + 1)
+
+    I_d = ID(I_d, I_b, d_LA, N_angle, N2_angle)
+    I_b, G_layer = IB(I_b, d_LA, solar_elevation, N_angle, N2_angle)
+
+    return I_b, I_d, G_layer
+
+
+# calculate direct radiation balance within each layer
+def S_b_balance(N_layer, S_b_down, I_b):
+    # S_b_downとI_bを逆順にして累積積を計算し、再度逆順にする
+    result = np.cumprod(S_b_down[::-1] * I_b[::-1])[::-1]
+    S_b_down[:1] = result[:1]  # 結果をS_b_downに代入、最初の値は変化しない
+
+    return S_b_down
+
+
+@jit(nopython=True, cache=True)
+# calculate diffuse radiation balance within each layer
+def S_d_balance(
+    reflectance,
+    transmissivity,
+    albedo_soil,
+    N_layer,
+    S_b_down,
+    S_d_down,
+    S_d_up,
+    L,
+    I_b,
+    I_d,
+):
+    S_d_up[0] = (S_b_down[0] + S_d_down[0]) * albedo_soil[L]
+    S_d_down[0:N_layer] = (
+        S_d_down[1:] * (transmissivity[L] * (1 - I_d[1:]) + I_d[1:])
+        + S_d_up[0:N_layer] * reflectance[L] * (1 - I_d[1:])
+        + S_b_down[1:] * transmissivity[L] * (1 - I_b[1:])
+    )
+    S_d_up[N_layer] = S_b_down[N_layer] * reflectance[L] * reflectance[L]
+    for i_l in range(N_layer, 0, -1):
+        S_d_down[i_l - 1] = (
+            S_d_down[i_l] * (transmissivity[L] * (1 - I_d[i_l]) + I_d[i_l])
+            + S_d_up[i_l - 1] * reflectance[L] * (1 - I_d[i_l])
+            + S_b_down[i_l] * transmissivity[L] * (1 - I_b[i_l])
+        )
+    S_d_up[1:] = (
+        S_d_up[0:N_layer] * (transmissivity[L] * (1 - I_d[1:]) + I_d[1:])
+        + S_d_down[1:] * reflectance[L] * (1 - I_d[1:])
+        + S_b_down[1:] * reflectance[L] * (1 - I_b[1:])
+    )
+    return S_d_down, S_d_up
+
+
+def S_balance(
+    reflectance,
+    transmissivity,
+    albedo_soil,
+    N_layer,
+    diff_level,
+    S_max,
+    R_s_b,
+    R_s_d,
+    solar_elevation,
+    d_LA,
+    S_b_down,
+    S_d_down,
+    S_d_up,
+    L,
+    I_b,
+    I_d,
+    G_layer,
+    d_LA_su,
+    d_LA_sh,
+    Q_shaded,
+    Q_sunlit,
+):  # calculate radiation balance within each layer
+    S_b_down[N_layer] = R_s_b[L]
+    S_d_down[N_layer] = R_s_d[L]
+    S_b_down = S_b_balance(N_layer, S_b_down, I_b)
+
+    if S_max > 0 and G_layer > 0:
+        if S_b_down[N_layer] <= 0:
+            d_LA_su[1:] = 0
+        else:
+            d_LA_su[1:] = (
+                (S_b_down[1:] - S_d_down[1:])
+                / S_b_down[N_layer]
+                * math.sin(solar_elevation)
+                / G_layer
+            )
+            d_LA_su[1:] = np.maximum(d_LA_su[1:], d_LA[1:])
+        d_LA_sh[1:] = d_LA[1:] - d_LA_su[1:]
+
+    i_l = np.arange(1, N_layer + 1)
+    S_d_down[0:N_layer] = S_d_down[N_layer] * i_l / N_layer
+    S_d_up[0:N_layer] = S_b_down[N_layer] * reflectance[L] * reflectance[L] * i_l / N_layer
+    S_d_up[N_layer] = R_s_b[L] * reflectance[L] * reflectance[L]
+
+    while True:  # iterate until calculations are converged
+        S_d_down_pre = np.copy(S_d_down)
+        S_d_up_pre = np.copy(S_d_up)
+
+        S_d_down, S_d_up = S_d_balance(
+            reflectance,
+            transmissivity,
+            albedo_soil,
+            N_layer,
+            S_b_down,
+            S_d_down,
+            S_d_up,
+            L,
+            I_b,
+            I_d,
+        )
+
+        diff_S_d_down = np.abs(S_d_down - S_d_down_pre)
+        diff_S_d_up = np.abs(S_d_up - S_d_up_pre)
+
+        if np.max(diff_S_d_down[0:N_layer]) <= diff_level and np.max(diff_S_d_up) <= diff_level:
+            break
+
+    Q_shaded[L] = 0
+    Q_sunlit[L] = 0
+    if S_b_down[N_layer] <= 0:
+        d_LA_su[1:] = 0
+    else:
+        d_LA_su[1:] = (
+            (S_b_down[1:] - S_d_down[0:N_layer])
+            / S_b_down[N_layer]
+            * math.sin(solar_elevation)
+            / G_layer
+        )
+        d_LA_su[1:] = np.minimum(d_LA_su[1:], d_LA[1:])
+    d_LA_sh[1:] = d_LA[1:] - d_LA_su[1:]
+    Q_shaded[L] = np.sum(
+        (1 - transmissivity[L])
+        * (1 - transmissivity[L] - reflectance[L])
+        * (S_d_down[1:] + S_d_up[0:N_layer])
+        * d_LA_sh[1:]
+    )
+    Q_sunlit[L] = np.sum(
+        (1 - transmissivity[L])
+        * (1 - transmissivity[L] - reflectance[L])
+        * (
+            S_d_down[1:]
+            + S_d_up[0:N_layer]
+            + S_b_down[N_layer] * G_layer / math.sin(solar_elevation)
+        )
+        * d_LA_sh[1:]
+    )
+
+    return d_LA_su, d_LA_sh, Q_shaded, Q_sunlit
+
+
+def L_balance(
+    emissivity_c,
+    k_b_black,
+    k_d_black,
+    SteBol_const,
+    LAI,
+    R_s_total,
+    T_a_K,
+    L_down,
+    LAI_sunlit,
+    LAI_shaded,
+):
+    extinction_coeffcient_d_black = ExtinctionCoeffcientFunction(LAI, k_d_black)
+    extinction_coeffcient_2d_black = ExtinctionCoeffcientFunction(LAI, 2 * k_d_black)
+    extinction_coeffcient_b_black_plus_d_black = ExtinctionCoeffcientFunction(
+        LAI, k_b_black + k_d_black
+    )
+    extinction_coeffcient_b_black_minus_d_black = ExtinctionCoeffcientFunction(
+        LAI, k_b_black - k_d_black
+    )
+    Q_long_isothermal_sunlit = (L_down - emissivity_c * SteBol_const * T_a_K**4) * LAI_sunlit / LAI
+    Q_long_isothermal_shaded = (L_down - emissivity_c * SteBol_const * T_a_K**4) * LAI_shaded / LAI
+    if LAI < 1:
+        Q_long_isothermal_sunlit *= LAI
+        Q_long_isothermal_shaded *= LAI
+    if abs(Q_long_isothermal_sunlit) > R_s_total:
+        Q_long_isothermal_sunlit = 0
+    if abs(Q_long_isothermal_shaded) > R_s_total:
+        Q_long_isothermal_shaded = 0
+
+    return Q_long_isothermal_sunlit, Q_long_isothermal_shaded
+
+
+def CalRn(Q_sunlit, Q_shaded, Q_long_isothermal_sunlit, Q_long_isothermal_shaded):
+    Q_n_isothermal_sunlit = Q_sunlit[0] + Q_sunlit[1] + Q_long_isothermal_sunlit
+    Q_n_isothermal_shaded = Q_shaded[0] + Q_shaded[1] + Q_long_isothermal_shaded
+
+    return Q_n_isothermal_sunlit, Q_n_isothermal_shaded
+
+
+def ResConst(
+    C_a_out,
+    VPD_a,
+    gamma,
+    Delta,
+    g_s_sunlit,
+    g_s_shaded,
+    C_i_sunlit,
+    C_i_shaded,
+    diff_T_sunlit,
+    diff_T_shaded,
+    g_a,
+    g_b_forced_sunlit,
+    g_b_free_sunlit,
+    g_b_sunlit,
+    g_b_forced_shaded,
+    g_b_free_shaded,
+    g_b_shaded,
+    g_h_sunlit,
+    g_h_shaded,
+    g_r_sunlit,
+    g_r_shaded,
+):
+    g_w_sunlit = 1 / (1 / g_a + 1 / g_b_sunlit + 1 / g_s_sunlit)
+    g_w_shaded = 1 / (1 / g_a + 1 / g_b_shaded + 1 / g_s_shaded)
+
+    gamma_modified_sunlit = gamma * (g_h_sunlit + g_r_sunlit) / g_w_sunlit
+    gamma_modified_shaded = gamma * (g_h_shaded + g_r_shaded) / g_w_shaded
+
+    g_c_sunlit = 1 / (
+        1 / g_a
+        + 1 / (0.11 / 0.147 * g_b_forced_sunlit + 0.038 / 0.055 * g_b_free_sunlit)
+        + 1 / 0.64 / g_s_sunlit
+    )
+    g_c_shaded = 1 / (
+        1 / g_a
+        + 1 / (0.11 / 0.147 * g_b_forced_shaded + 0.038 / 0.055 * g_b_free_shaded)
+        + 1 / 0.64 / g_s_shaded
+    )
+    C_s_sunlit = C_i_sunlit + (C_a_out - C_i_sunlit) * g_c_sunlit / 0.64 / g_s_sunlit
+    C_s_shaded = C_i_shaded + (C_a_out - C_i_shaded) * g_c_shaded / 0.64 / g_s_shaded
+
+    VPD_s_sunlit = (VPD_a + Delta * diff_T_sunlit) * g_w_sunlit / g_s_sunlit
+    VPD_s_shaded = (VPD_a + Delta * diff_T_shaded) * g_w_shaded / g_s_shaded
+
+    return (
+        gamma_modified_sunlit,
+        gamma_modified_shaded,
+        C_s_sunlit,
+        C_s_shaded,
+        VPD_s_sunlit,
+        VPD_s_shaded,
+    )
+
+
+def CalDiffT(
+    VPD_a,
+    c_p,
+    Delta,
+    Q_n_isothermal_sunlit,
+    Q_n_isothermal_shaded,
+    g_h_sunlit,
+    g_h_shaded,
+    g_r_sunlit,
+    g_r_shaded,
+    gamma_modified_sunlit,
+    gamma_modified_shaded,
+):
+    diff_T_sunlit = gamma_modified_sunlit / (
+        Delta + gamma_modified_sunlit
+    ) * Q_n_isothermal_sunlit / c_p / (g_h_sunlit + g_r_sunlit) - VPD_a / (
+        Delta + gamma_modified_sunlit
+    )
+    diff_T_shaded = gamma_modified_shaded / (
+        Delta + gamma_modified_shaded
+    ) * Q_n_isothermal_shaded / c_p / (g_h_shaded + g_r_shaded) - VPD_a / (
+        Delta + gamma_modified_shaded
+    )
+
+    return diff_T_sunlit, diff_T_shaded
+
+
+def CalConductance(
+    vegetation_type,
+    leaf_type,
+    d_leaf,
+    R,
+    Karman_const,
+    SteBol_const,
+    emissivity_c,
+    k_b_black,
+    k_d_black,
+    k_n,
+    k_u,
+    g_0_sunlit,
+    g_0_shaded,
+    swc,
+    porosity,
+    W,
+    W_capacity,
+    z,
+    c_p,
+    u_z,
+    u_attenuation_coef,
+    LAI,
+    height_c,
+    pressure,
+    T_a_K,
+    LAI_sunlit,
+    LAI_shaded,
+    T_c_K_soil,
+    T_c_K_sunlit,
+    T_c_K_shaded,
+    g_s_sunlit,
+    g_s_shaded,
+    u_h_pre,
+    r_a_alpha_pre,
+    r_a_s_alpha_pre,
+    g_b_free_sunlit_pre,
+    g_b_free_shaded_pre,
+    g_b_free_soil_pre,
+    G_0_sunlit_pre,
+    G_0_shaded_pre,
+    g_b_forced_sunlit_pre,
+    g_b_forced_shaded_pre,
+    g_b_sunlit_pre,
+    g_b_shaded_pre,
+    g_h_sunlit_pre,
+    g_h_shaded_pre,
+    g_r_sunlit_pre,
+    g_r_shaded_pre,
+    r_a_c_pre,
+    r_s_c_pre,
+):
+    # the effective roughness length of the substrate (m) (Van Bavel and Hillel, 1976)
+    z_0_e = 0.01
+
+    if vegetation_type == 1 and leaf_type == 0 and LAI == 0:
+        d = 0.01
+        z_0_m = 0.01
+        u_h = u_h_pre
+        r_a_alpha = r_a_alpha_pre
+        r_a_s_alpha = r_a_s_alpha_pre
+    else:
+        if vegetation_type == 0:
+            z_0_m = 0.10 * height_c  # for forest ~ (Verseghy et al., 1993)
+            z_0_h = z_0_m / 2.0  # for forest
+            d = 0.70 * height_c  # for forest ~ (Verseghy et al., 1993)
+        elif vegetation_type == 1:
+            z_0_m = 0.123 * height_c  # for crop and grass ~ (Monteith, 1981)
+            z_0_h = z_0_m / 12.0  # for grass
+            d = 0.67 * height_c  # for crop and grass ~ (Monteith, 1981)
+        u_h = (
+            u_z
+            * math.log((height_c - d) / z_0_m)
+            * math.log((height_c - d) / z_0_h)
+            / math.log((z - d) / z_0_m)
+            / math.log((z - d) / z_0_h)
+        )
+        # within-canopy wind speed ~ (Cionco, 1972)
+        u = u_h * math.exp(-u_attenuation_coef * 0.5)
+        u = max(u, 0.0001)
+        r_a_alpha = (
+            math.log((z - d) / z_0_m)
+            / (Karman_const**2 * u_z)
+            * (
+                math.log((z - d) / (height_c - d))
+                + height_c
+                / (2.5 * (height_c - d))
+                * (math.exp(2.5 * (1 - (d + z_0_m) / height_c)) - 1)
+            )
+        )
+        r_a_s_alpha = (
+            math.log((z - d) / z_0_m)
+            / (Karman_const**2 * u_z)
+            * height_c
+            / (2.5 * (height_c - d))
+            * (math.exp(2.5) - math.exp(2.5 * (1 - (d + z_0_m) / height_c)))
+        )
+    u_soil = u_h * math.exp(-u_attenuation_coef)
+    u_soil = max(u_soil, 0.0001)
+
+    r_s_a_0 = max(0, math.log(z / z_0_e) * math.log((d + z_0_m) / z_0_e) / (Karman_const**2 * u_z))
+    r_a_0 = (math.log(z / z_0_e)) ** 2 / (Karman_const**2 * u_z) - r_s_a_0
+    if r_a_0 <= 0:
+        r_a_0 = 0.1
+
+    if 0 <= LAI <= 4:
+        # Aerodynamic resistance (s/m) between the reference height and the canopy (Shuttleworth and Wallace, 1985)
+        r_a = r_a_alpha * LAI / 4 + r_a_0 * (1 - LAI / 4)
+        # Aerodynamic resistance (s/m) between the reference height and the soil surface (Shuttleworth and Wallace, 1985)
+        r_a_soil = r_a_s_alpha * LAI / 4 + r_s_a_0 * (1 - LAI / 4)
+    else:  # LAI > 4
+        r_a = r_a_alpha
+        r_a_soil = r_a_s_alpha
+
+    g_a = 1 / r_a * pressure * 100 / R / T_a_K
+    # A boundary layer resistance, which is devided into free and forced convection
+    if LAI > 0:
+        # free convection (fluid flow generated from temperature difference) (mol/m2/s)
+        g_b_free_sunlit = (
+            0.055 * ((T_c_K_sunlit - T_a_K) / d_leaf[leaf_type]) ** (1 / 4) * LAI_sunlit
+        )
+        g_b_free_shaded = (
+            0.055 * ((T_c_K_shaded - T_a_K) / d_leaf[leaf_type]) ** (1 / 4) * LAI_shaded
+        )
+        g_b_free_soil = 0.055 * ((T_c_K_soil - T_a_K) / d_leaf[leaf_type]) ** (1 / 4)
+        extinction_coeffcient_b_black_plus_d_black = ExtinctionCoeffcientFunction(
+            LAI, k_b_black + k_d_black
+        )
+        extinction_coeffcient_d_black = ExtinctionCoeffcientFunction(LAI, k_d_black)
+        extinction_coeffcient_u_plus_b_black = ExtinctionCoeffcientFunction(
+            LAI, 0.5 * k_u + k_b_black
+        )
+        extinction_coeffcient_u = ExtinctionCoeffcientFunction(LAI, 0.5 * k_u)
+        extinction_coeffcient_b_black_plus_n = ExtinctionCoeffcientFunction(LAI, k_b_black + k_n)
+        extinction_coefficient_n = ExtinctionCoeffcientFunction(LAI, k_n)
+        G_0_sunlit = g_0_sunlit * extinction_coeffcient_b_black_plus_n
+        G_0_shaded = g_0_shaded * (extinction_coefficient_n - extinction_coeffcient_b_black_plus_n)
+        # forced convection (fluid moved past surface by external force) (mol/m2/s)
+        g_b_forced = 0.147 * math.sqrt(u_h / d_leaf[leaf_type])
+        g_b_forced_sunlit = g_b_forced * extinction_coeffcient_u_plus_b_black
+        if extinction_coeffcient_u - extinction_coeffcient_u_plus_b_black < 0.0001:
+            g_b_forced_shaded = g_b_forced * 0.0001
+        else:
+            g_b_forced_shaded = g_b_forced * (
+                extinction_coeffcient_u - extinction_coeffcient_u_plus_b_black
+            )
+        if math.isnan(g_b_free_sunlit):
+            g_b_free_sunlit = 0
+        if math.isnan(g_b_free_shaded):
+            g_b_free_shaded = 0
+        g_b_sunlit = g_b_free_sunlit + g_b_forced_sunlit
+        g_b_shaded = g_b_free_shaded + g_b_forced_shaded
+        g_h_sunlit = 1 / (
+            1 / g_a + 1 / (0.135 / 0.147 * g_b_forced_sunlit + 0.05 / 0.055 * g_b_free_sunlit)
+        )
+        g_h_shaded = 1 / (
+            1 / g_a + 1 / (0.135 / 0.147 * g_b_forced_shaded + 0.05 / 0.055 * g_b_free_shaded)
+        )
+        g_r_sunlit = (
+            4
+            * emissivity_c
+            * SteBol_const
+            * T_a_K**3
+            * k_d_black
+            / c_p
+            * (
+                extinction_coeffcient_b_black_plus_d_black
+                + (math.exp(-k_d_black * LAI) - math.exp(-k_b_black * LAI))
+                / (k_b_black - k_d_black)
+            )
+        )
+        g_r_shaded = (
+            4
+            * emissivity_c
+            * SteBol_const
+            * T_a_K**3
+            * k_d_black
+            / c_p
+            * (
+                2 * extinction_coeffcient_d_black
+                - extinction_coeffcient_b_black_plus_d_black
+                - (math.exp(-k_d_black * LAI) + math.exp(-k_b_black * LAI))
+                / (k_b_black - k_d_black)
+            )
+        )
+        r_a_c = 2 / (g_b_sunlit + g_b_shaded) * pressure * 100 / R / T_a_K  # (s/m)
+        r_s_c = 2 / (g_s_sunlit + g_s_shaded) * pressure * 100 / R / T_a_K  # (s/m)
+    else:
+        g_b_free_sunlit = g_b_free_sunlit_pre
+        g_b_free_shaded = g_b_free_shaded_pre
+        g_b_free_soil = g_b_free_soil_pre
+        G_0_sunlit = G_0_sunlit_pre
+        G_0_shaded = G_0_shaded_pre
+        g_b_forced_sunlit = g_b_forced_sunlit_pre
+        g_b_forced_shaded = g_b_forced_shaded_pre
+        g_b_sunlit = g_b_sunlit_pre
+        g_b_shaded = g_b_shaded_pre
+        g_h_sunlit = g_h_sunlit_pre
+        g_h_shaded = g_h_shaded_pre
+        g_r_sunlit = g_r_sunlit_pre
+        g_r_shaded = g_r_shaded_pre
+        r_a_c = r_a_c_pre
+        r_s_c = r_s_c_pre
+
+    if math.isnan(g_b_free_soil):
+        g_b_free_soil = 0
+
+    # r_s: soil resistance (s/m) ~ (Shuttleworth et al., 1985, Wu et al., 2020)
+    try:
+        r_s = (rho_a * C_p / gamma) * (e_s_Ta - e_a_Ta) / lE_soil
+Except ValueError:
+    
+
+    if W < W_capacity:
+        h_beta = 1 / 4 * (1 - math.cos(W / W_capacity * math.pi)) ** 2
+    else:
+        h_beta = 1
+
+    u_h_pre = u_h
+    r_a_alpha_pre = r_a_alpha
+    r_a_s_alpha_pre = r_a_s_alpha
+    g_b_free_sunlit_pre = g_b_free_sunlit
+    g_b_free_shaded_pre = g_b_free_shaded
+    g_b_free_soil_pre = g_b_free_soil
+    G_0_sunlit_pre = G_0_sunlit
+    G_0_shaded_pre = G_0_shaded
+    g_b_forced_sunlit_pre = g_b_forced_sunlit
+    g_b_forced_shaded_pre = g_b_forced_shaded
+    g_b_sunlit_pre = g_b_sunlit
+    g_b_shaded_pre = g_b_shaded
+    g_h_sunlit_pre = g_h_sunlit
+    g_h_shaded_pre = g_h_shaded
+    g_r_sunlit_pre = g_r_sunlit
+    g_r_shaded_pre = g_r_shaded
+    r_a_c_pre = r_a_c
+    r_s_c_pre = r_s_c
+
+    return (
+        r_a,
+        r_a_soil,
+        G_0_sunlit,
+        G_0_shaded,
+        g_a,
+        g_b_free_sunlit,
+        g_b_forced_sunlit,
+        g_b_sunlit,
+        g_b_forced_shaded,
+        g_b_free_shaded,
+        g_b_shaded,
+        g_h_sunlit,
+        g_h_shaded,
+        g_b_free_soil,
+        g_r_sunlit,
+        g_r_shaded,
+        r_a_c,
+        r_s_c,
+        r_s,
+        h_beta,
+        u_h_pre,
+        r_a_alpha_pre,
+        r_a_s_alpha_pre,
+        g_b_free_sunlit_pre,
+        g_b_free_shaded_pre,
+        g_b_free_soil_pre,
+        G_0_sunlit_pre,
+        G_0_shaded_pre,
+        g_b_forced_sunlit_pre,
+        g_b_forced_shaded_pre,
+        g_b_sunlit_pre,
+        g_b_shaded_pre,
+        g_h_sunlit_pre,
+        g_h_shaded_pre,
+        g_r_sunlit_pre,
+        g_r_shaded_pre,
+        r_a_c_pre,
+        r_s_c_pre,
+    )
+
+
+def SimultaneousPhotosynthesis(
+    vegetation_type,
+    leaf_type,
+    reflectance,
+    transmissivity,
+    scattering_coefficient,
+    reflectance_b,
+    reflectance_d,
+    k_b,
+    k_d,
+    k_b_black,
+    absorptance,
+    C_a_out,
+    V_c_max_org,
+    Ha_V,
+    J_m_25,
+    Ha_J,
+    Hd_J,
+    Delta_S,
+    Gamma_25,
+    a_1,
+    VPD_0,
+    T_cold,
+    R,
+    f,
+    a,
+    R_s_b,
+    R_s_d,
+    R_s_b_total,
+    R_s_d_total,
+    R_s_total,
+    pressure,
+    S_max,
+    T_a_C_mean,
+    LAI,
+    LAI_g,
+    LAI_sunlit,
+    LAI_shaded,
+    Q_sunlit,
+    C_s_shaded,
+    C_i_sunlit,
+    C_i_shaded,
+    T_c_C_sunlit,
+    T_c_K_sunlit,
+    T_c_C_shaded,
+    T_c_K_shaded,
+    G_0_sunlit,
+    G_0_shaded,
+    h_beta,
+    C_s_sunlit,
+    VPD_s_sunlit,
+    VPD_s_shaded,
+    J_sunlit_pre,
+    J_shaded_pre,
+    V_j_sunlit_pre,
+    V_j_shaded_pre,
+    Gamma_respiration_sunlit_pre,
+    Gamma_respiration_shaded_pre,
+    called_from=None,
+):
+    (
+        k_n,
+        K_c_sunlit,
+        K_c_shaded,
+        K_o_sunlit,
+        K_o_shaded,
+        Gamma_sunlit,
+        Gamma_shaded,
+        O_i,
+        V_c_max_sunlit,
+        V_c_max_shaded,
+        V_c_sunlit,
+        V_c_shaded,
+        J_sunlit,
+        J_shaded,
+        V_j_sunlit,
+        V_j_shaded,
+        V_n_sunlit,
+        V_n_shaded,
+        R_d_sunlit,
+        R_d_shaded,
+        A_c_sunlit,
+        A_c_shaded,
+        J_sunlit_pre,
+        J_shaded_pre,
+        V_j_sunlit_pre,
+        V_j_shaded_pre,
+    ) = Photosynthesis(
+        vegetation_type,
+        leaf_type,
+        transmissivity,
+        reflectance,
+        scattering_coefficient,
+        reflectance_b,
+        reflectance_d,
+        k_b,
+        k_d,
+        k_b_black,
+        absorptance,
+        V_c_max_org,
+        Ha_V,
+        J_m_25,
+        Ha_J,
+        Hd_J,
+        Delta_S,
+        Gamma_25,
+        T_cold,
+        R,
+        f,
+        a,
+        R_s_b,
+        R_s_d,
+        R_s_total,
+        pressure,
+        S_max,
+        T_a_C_mean,
+        LAI,
+        LAI_g,
+        LAI_sunlit,
+        LAI_shaded,
+        Q_sunlit,
+        C_i_sunlit,
+        C_i_shaded,
+        T_c_C_sunlit,
+        T_c_K_sunlit,
+        T_c_C_shaded,
+        T_c_K_shaded,
+        J_sunlit_pre,
+        J_shaded_pre,
+        V_j_sunlit_pre,
+        V_j_shaded_pre,
+        called_from,
+    )
+    f_w = h_beta
+
+    if (
+        R_s_total > 0 and S_max > 0
+    ):  # analytical solution of photosynthesis rate and incellular CO2 concenteration
+        if R_s_b_total > 0 and A_c_sunlit >= 0:
+            Gamma_respiration_sunlit = (
+                (
+                    R_d_sunlit * (K_c_sunlit * pressure * 1000) * (1 + O_i / K_o_sunlit)
+                    + V_c_max_sunlit * Gamma_sunlit * (pressure / 1000)
+                )
+                / (V_c_max_sunlit - R_d_sunlit)
+                / (pressure / 1000)
+            )
+            d_1 = a_1 * f_w / (C_s_sunlit - Gamma_respiration_sunlit) / (1 + VPD_s_sunlit / VPD_0)
+
+            if V_c_sunlit < V_j_sunlit:
+                d_2 = V_c_max_sunlit
+                d_3 = K_c_sunlit * (1 + O_i / K_o_sunlit)
+            else:
+                d_2 = 0.25 * J_sunlit
+                d_3 = 2 * Gamma_sunlit
+
+            b_0 = (
+                -(1 - d_1 * C_s_sunlit) * (d_2 * Gamma_sunlit + d_3 * R_d_sunlit)
+                - G_0_sunlit * d_3 * C_s_sunlit
+            )
+            b_1 = (
+                (1 - d_1 * C_s_sunlit) * (d_2 - R_d_sunlit)
+                + G_0_sunlit * (d_3 - C_s_sunlit)
+                - d_1 * (d_2 * Gamma_sunlit + d_3 * R_d_sunlit)
+            )
+            b_2 = G_0_sunlit + d_1 * (d_2 - R_d_sunlit)
+
+            if b_1**2 > 4 * b_0 * b_2 and b_2 != 0:
+                C_i_sunlit = (-b_1 + math.sqrt(b_1**2 - 4 * b_0 * b_2)) / (2 * b_2)
+            else:
+                C_i_sunlit = C_a_out * 0.7
+
+            if math.isnan(C_i_sunlit) or C_i_sunlit + d_3 == 0:
+                C_i_sunlit = C_a_out * 0.7
+            else:
+                A_c_sunlit = d_2 * (C_i_sunlit - Gamma_sunlit) / (C_i_sunlit + d_3) - R_d_sunlit
+        else:
+            Gamma_respiration_sunlit = Gamma_respiration_sunlit_pre
+
+        if R_s_d_total > 0 and A_c_shaded >= 0:
+            Gamma_respiration_shaded = (
+                (
+                    R_d_shaded * (K_c_shaded * pressure * 1000) * (1 + O_i / K_o_shaded)
+                    + V_c_max_shaded * Gamma_shaded * (pressure / 1000)
+                )
+                / (V_c_max_shaded - R_d_shaded)
+                / (pressure / 1000)
+            )
+            d_1 = a_1 * f_w / (C_s_shaded - Gamma_respiration_shaded) / (1 + VPD_s_shaded / VPD_0)
+
+            if V_c_shaded < V_j_shaded:
+                d_2 = V_c_max_shaded
+                d_3 = K_c_shaded * (1 + O_i / K_o_shaded)
+            else:
+                d_2 = 0.25 * J_shaded
+                d_3 = 2 * Gamma_shaded
+
+            b_0 = (
+                -(1 - d_1 * C_s_shaded) * (d_2 * Gamma_shaded + d_3 * R_d_shaded)
+                - G_0_shaded * d_3 * C_s_shaded
+            )
+            b_1 = (
+                (1 - d_1 * C_s_shaded) * (d_2 - R_d_shaded)
+                + G_0_shaded * (d_3 - C_s_shaded)
+                - d_1 * (d_2 * Gamma_shaded + d_3 * R_d_shaded)
+            )
+            b_2 = G_0_shaded + d_1 * (d_2 - R_d_shaded)
+
+            if b_1**2 > 4 * b_0 * b_2 and b_2 != 0:
+                C_i_shaded = (-b_1 + math.sqrt(b_1**2 - 4 * b_0 * b_2)) / (2 * b_2)
+            else:
+                C_i_shaded = C_a_out * 0.7
+
+            if math.isnan(C_i_shaded) or C_i_shaded + d_3 == 0:
+                C_i_shaded = C_a_out * 0.7
+            else:
+                A_c_shaded = d_2 * (C_i_shaded - Gamma_shaded) / (C_i_shaded + d_3) - R_d_sunlit
+        else:
+            Gamma_respiration_shaded = Gamma_respiration_shaded_pre
+    else:
+        Gamma_respiration_sunlit, Gamma_respiration_shaded = (
+            Gamma_respiration_sunlit_pre,
+            Gamma_respiration_shaded_pre,
+        )
+
+    Gamma_respiration_sunlit_pre = Gamma_respiration_sunlit
+    Gamma_respiration_shaded_pre = Gamma_respiration_shaded
+
+    return (
+        k_n,
+        Gamma_respiration_sunlit,
+        Gamma_respiration_shaded,
+        C_i_sunlit,
+        C_i_shaded,
+        V_n_sunlit,
+        V_n_shaded,
+        R_d_sunlit,
+        R_d_shaded,
+        A_c_sunlit,
+        A_c_shaded,
+        f_w,
+        Gamma_respiration_sunlit_pre,
+        Gamma_respiration_shaded_pre,
+    )
+
+
+def Photosynthesis(
+    vegetation_type,
+    leaf_type,
+    transmissivity,
+    reflectance,
+    scattering_coefficient,
+    reflectance_b,
+    reflectance_d,
+    k_b,
+    k_d,
+    k_b_black,
+    absorptance,
+    V_c_max_org,
+    Ha_V,
+    J_m_25,
+    Ha_J,
+    Hd_J,
+    Delta_S,
+    Gamma_25,
+    T_cold,
+    R,
+    f,
+    a,
+    R_s_b,
+    R_s_d,
+    R_s_total,
+    pressure,
+    S_max,
+    T_a_C_mean,
+    LAI,
+    LAI_g,
+    LAI_sunlit,
+    LAI_shaded,
+    Q_sunlit,
+    C_i_sunlit,
+    C_i_shaded,
+    T_c_C_sunlit,
+    T_c_K_sunlit,
+    T_c_C_shaded,
+    T_c_K_shaded,
+    J_sunlit_pre,
+    J_shaded_pre,
+    V_j_sunlit_pre,
+    V_j_shaded_pre,
+    called_from,
+):
+    L = 0  # PAR
+
+    K_c_sunlit = (
+        260 * math.exp((T_c_C_sunlit - 25) * 59366 / (298 * R * T_c_K_sunlit)) / 1000 / pressure
+    )  # mol/mol
+    K_c_shaded = (
+        260 * math.exp((T_c_C_shaded - 25) * 59366 / (298 * R * T_c_K_shaded)) / 1000 / pressure
+    )  # mol/mol
+    K_o_sunlit = (
+        179 * math.exp((T_c_C_sunlit - 25) * 35948 / (298 * R * T_c_K_sunlit)) / pressure
+    )  # mol/mol
+    K_o_shaded = (
+        179 * math.exp((T_c_C_shaded - 25) * 35948 / (298 * R * T_c_K_shaded)) / pressure
+    )  # mol/mol
+    Gamma_sunlit = (
+        Gamma_25[vegetation_type][leaf_type]
+        * math.exp((T_c_C_sunlit - 25) * 29000 / (298 * R * T_c_K_sunlit))
+        / (pressure / 1000)
+    )  # CO2 compensation point without dark respiration (μmol/mol)
+    Gamma_shaded = (
+        Gamma_25[vegetation_type][leaf_type]
+        * math.exp((T_c_C_shaded - 25) * 29000 / (298 * R * T_c_K_shaded))
+        / (pressure / 1000)
+    )  # CO2 compensation point without dark respiration (μmol/mol)
+    O_i = 209 / pressure  # mol/mol
+
+    (
+        k_n,
+        extinction_coeffcient_b_black_plus_n,
+        extinction_coefficient_n,
+        V_c_max_sunlit,
+        V_c_max_shaded,
+        V_c_sunlit,
+        V_c_shaded,
+    ) = CalVc(
+        vegetation_type,
+        leaf_type,
+        R,
+        V_c_max_org,
+        Ha_V,
+        k_b_black,
+        T_c_C_sunlit,
+        T_c_K_sunlit,
+        T_c_C_shaded,
+        T_c_K_shaded,
+        LAI,
+        LAI_g,
+        LAI_sunlit,
+        LAI_shaded,
+        C_i_sunlit,
+        C_i_shaded,
+        K_c_sunlit,
+        K_c_shaded,
+        K_o_sunlit,
+        K_o_shaded,
+        Gamma_sunlit,
+        Gamma_shaded,
+        O_i,
+        called_from,
+    )
+
+    if R_s_total > 0 and S_max > 0:
+        J_sunlit, J_shaded, V_j_sunlit, V_j_shaded = CalVj(
+            vegetation_type,
+            leaf_type,
+            transmissivity,
+            reflectance,
+            scattering_coefficient,
+            reflectance_b,
+            reflectance_d,
+            k_b,
+            k_d,
+            k_b_black,
+            absorptance,
+            J_m_25,
+            Ha_J,
+            Hd_J,
+            Delta_S,
+            T_cold,
+            R,
+            f,
+            a,
+            R_s_b,
+            R_s_d,
+            T_a_C_mean,
+            T_c_C_sunlit,
+            T_c_K_sunlit,
+            T_c_C_shaded,
+            T_c_K_shaded,
+            LAI,
+            LAI_g,
+            Q_sunlit,
+            C_i_sunlit,
+            C_i_shaded,
+            Gamma_sunlit,
+            Gamma_shaded,
+            L,
+            extinction_coeffcient_b_black_plus_n,
+            extinction_coefficient_n,
+            called_from,
+        )
+
+        V_n_sunlit = min(V_c_sunlit, V_j_sunlit)
+        V_n_shaded = min(V_c_shaded, V_j_shaded)
+    else:
+        V_n_sunlit = 0
+        V_n_shaded = 0
+        J_sunlit = J_sunlit_pre
+        J_shaded = J_shaded_pre
+        V_j_sunlit = V_j_sunlit_pre
+        V_j_shaded = V_j_shaded_pre
+
+    R_d_sunlit = 0.015 * V_c_max_sunlit
+    R_d_shaded = 0.015 * V_c_max_shaded
+    A_c_sunlit = V_n_sunlit - R_d_sunlit
+    A_c_shaded = V_n_shaded - R_d_shaded
+
+    J_sunlit_pre = J_sunlit
+    J_shaded_pre = J_shaded
+    V_j_sunlit_pre = V_j_sunlit
+    V_j_shaded_pre = V_j_shaded
+
+    return (
+        k_n,
+        K_c_sunlit,
+        K_c_shaded,
+        K_o_sunlit,
+        K_o_shaded,
+        Gamma_sunlit,
+        Gamma_shaded,
+        O_i,
+        V_c_max_sunlit,
+        V_c_max_shaded,
+        V_c_sunlit,
+        V_c_shaded,
+        J_sunlit,
+        J_shaded,
+        V_j_sunlit,
+        V_j_shaded,
+        V_n_sunlit,
+        V_n_shaded,
+        R_d_sunlit,
+        R_d_shaded,
+        A_c_sunlit,
+        A_c_shaded,
+        J_sunlit_pre,
+        J_shaded_pre,
+        V_j_sunlit_pre,
+        V_j_shaded_pre,
+    )
+
+
+def CalVc(
+    vegetation_type,
+    leaf_type,
+    R,
+    V_c_max_org,
+    Ha_V,
+    k_b_black,
+    T_c_C_sunlit,
+    T_c_K_sunlit,
+    T_c_C_shaded,
+    T_c_K_shaded,
+    LAI,
+    LAI_g,
+    LAI_sunlit,
+    LAI_shaded,
+    C_i_sunlit,
+    C_i_shaded,
+    K_c_sunlit,
+    K_c_shaded,
+    K_o_sunlit,
+    K_o_shaded,
+    Gamma_sunlit,
+    Gamma_shaded,
+    O_i,
+    called_from,
+):
+    V_c_max_top_sunlit = V_c_max_org[vegetation_type][leaf_type] * math.exp(
+        (T_c_C_sunlit - 25) * Ha_V[vegetation_type][leaf_type] / (298 * R * T_c_K_sunlit)
+    )  # μmol/m^2/s
+    V_c_max_top_shaded = V_c_max_org[vegetation_type][leaf_type] * math.exp(
+        (T_c_C_shaded - 25) * Ha_V[vegetation_type][leaf_type] / (298 * R * T_c_K_shaded)
+    )  # μmol/m^2/s
+    k_n = 1.5 * math.exp(
+        0.00963 * (V_c_max_top_sunlit * LAI_sunlit + V_c_max_top_shaded * LAI_shaded) / LAI - 2.43
+    )
+
+    extinction_coeffcient_b_black_plus_n = ExtinctionCoeffcientFunction(LAI, k_b_black + k_n)
+    V_c_max_sunlit = V_c_max_top_sunlit * extinction_coeffcient_b_black_plus_n
+
+    extinction_coefficient_n = ExtinctionCoeffcientFunction(LAI, k_n)
+    V_c_max_shaded = V_c_max_top_shaded * (
+        extinction_coefficient_n - extinction_coeffcient_b_black_plus_n
+    )
+
+    if called_from == "NoConverged":
+        V_c_sunlit = (
+            V_c_max_sunlit
+            * (C_i_sunlit - Gamma_sunlit)
+            / (C_i_sunlit + K_c_sunlit * (1 + O_i / K_o_sunlit))
+        )
+        V_c_shaded = (
+            V_c_max_shaded
+            * (C_i_shaded - Gamma_shaded)
+            / (C_i_shaded + K_c_shaded * (1 + O_i / K_o_shaded))
+        )
+    else:
+        V_c_sunlit = (
+            V_c_max_sunlit
+            * (C_i_sunlit - Gamma_sunlit)
+            / (C_i_sunlit + K_c_sunlit * (1 + O_i / K_o_sunlit))
+            * LAI_g
+            / LAI
+        )
+        V_c_shaded = (
+            V_c_max_shaded
+            * (C_i_shaded - Gamma_shaded)
+            / (C_i_shaded + K_c_shaded * (1 + O_i / K_o_shaded))
+            * LAI_g
+            / LAI
+        )
+
+    return (
+        k_n,
+        extinction_coeffcient_b_black_plus_n,
+        extinction_coefficient_n,
+        V_c_max_sunlit,
+        V_c_max_shaded,
+        V_c_sunlit,
+        V_c_shaded,
+    )
+
+
+def CalVj(
+    vegetation_type,
+    leaf_type,
+    transmissivity,
+    reflectance,
+    scattering_coefficient,
+    reflectance_b,
+    reflectance_d,
+    k_b,
+    k_d,
+    k_b_black,
+    absorptance,
+    J_m_25,
+    Ha_J,
+    Hd_J,
+    Delta_S,
+    T_cold,
+    R,
+    f,
+    a,
+    R_s_b,
+    R_s_d,
+    T_a_C_mean,
+    T_c_C_sunlit,
+    T_c_K_sunlit,
+    T_c_C_shaded,
+    T_c_K_shaded,
+    LAI,
+    LAI_g,
+    Q_sunlit,
+    C_i_sunlit,
+    C_i_shaded,
+    Gamma_sunlit,
+    Gamma_shaded,
+    L,
+    extinction_coeffcient_b_black_plus_n,
+    extinction_coefficient_n,
+    called_from,
+):
+    q_sunlit = (
+        Q_sunlit[0] / (1 - transmissivity[L]) / (1 - transmissivity[L] - reflectance[L]) * 4.6
+    )  # 4.6 μmol/J
+
+    J_max_sunlit = (
+        J_m_25[vegetation_type][leaf_type]
+        * math.exp(
+            (T_c_C_sunlit - 25) * Ha_J[vegetation_type][leaf_type] / (R * T_c_K_sunlit * 298)
+        )
+        * (1 + np.exp((Delta_S[vegetation_type][leaf_type] * 298 - Hd_J) / (R * 298)))
+        / (
+            1
+            + np.exp(
+                (Delta_S[vegetation_type][leaf_type] * T_c_K_sunlit - Hd_J) / (R * T_c_K_sunlit)
+            )
+        )
+    )
+    J_max_shaded = (
+        J_m_25[vegetation_type][leaf_type]
+        * math.exp(
+            (T_c_C_shaded - 25) * Ha_J[vegetation_type][leaf_type] / (R * T_c_K_shaded * 298)
+        )
+        * (1 + np.exp((Delta_S[vegetation_type][leaf_type] * 298 - Hd_J) / (R * 298)))
+        / (
+            1
+            + np.exp(
+                (Delta_S[vegetation_type][leaf_type] * T_c_K_shaded - Hd_J) / (R * T_c_K_shaded)
+            )
+        )
+    )
+
+    J_max_sunlit *= extinction_coeffcient_b_black_plus_n
+    J_max_shaded *= extinction_coefficient_n - extinction_coeffcient_b_black_plus_n
+
+    if called_from == None and leaf_type > 0 and T_a_C_mean < T_cold[vegetation_type][leaf_type]:
+        J_max_sunlit /= 10
+        J_max_shaded /= 10
+
+    APAR_su = q_sunlit * absorptance * (1 - f) / 2
+    b_su = -(APAR_su + J_max_sunlit)
+    c_su = APAR_su * J_max_sunlit
+    J_sunlit = (-b_su - math.sqrt(b_su**2 - 4 * a * c_su)) / (2 * a)
+    J_sunlit = max(0, J_sunlit)
+
+    if called_from == "NoConverged":
+        j_max_top = J_max_shaded
+        q_shaded_top = (
+            Q_sunlit[0] / (1 - transmissivity[L]) / (1 - transmissivity[L] - reflectance[L]) * 4.6
+        )  # 4.6 μmol/J
+        APAR_sh = q_shaded_top * absorptance * (1 - f) / 2
+        b_sh = -(APAR_sh + j_max_top)
+        c_sh = APAR_sh * j_max_top
+        J_shaded = (-b_sh - math.sqrt(b_sh**2 - 4 * a * c_sh)) / (2 * a)
+        J_shaded = max(J_shaded, 0)
+
+        V_j_sunlit = (C_i_sunlit - Gamma_sunlit) * J_sunlit / (4 * (C_i_sunlit + 2 * Gamma_sunlit))
+        V_j_shaded = (C_i_shaded - Gamma_shaded) * J_shaded / (4 * (C_i_shaded + 2 * Gamma_shaded))
+
+    else:
+        extinction_coeffcient_d = ExtinctionCoeffcientFunction(LAI, k_d)
+        extinction_coeffcient_b_black_plus_d = ExtinctionCoeffcientFunction(LAI, k_b_black + k_d)
+        j_max_top = J_max_shaded / (extinction_coeffcient_d - extinction_coeffcient_b_black_plus_d)
+
+        extinction_coeffcient_b = ExtinctionCoeffcientFunction(LAI, k_b)
+        extinction_coeffcient_b_plus_b_black = ExtinctionCoeffcientFunction(LAI, k_b + k_b_black)
+        extinction_coeffcient_d_plus_b_black = ExtinctionCoeffcientFunction(LAI, k_d + k_b_black)
+        extinction_coeffcient_b_black = ExtinctionCoeffcientFunction(LAI, k_b_black)
+        extinction_coeffcient_2b_black = ExtinctionCoeffcientFunction(LAI, 2 * k_b_black)
+        c_2 = (
+            R_s_b[L]
+            * (
+                (1 - reflectance_b)
+                * k_b
+                * (extinction_coeffcient_b - extinction_coeffcient_b_plus_b_black)
+            )
+            - (1 - scattering_coefficient[L])
+            * k_b_black
+            * (extinction_coeffcient_b_black - extinction_coeffcient_2b_black)
+        ) / (
+            R_s_d[L]
+            * (1 - reflectance_d)
+            * k_d
+            * (extinction_coeffcient_d - extinction_coeffcient_d_plus_b_black)
+        )
+        q_shaded_top = (1 + c_2) * R_s_d[L] * k_d * (1 - reflectance_d) * 4.2  # 4.2 μmol/J
+
+        APAR_sh = q_shaded_top * absorptance * (1 - f) / 2
+        b_sh = -(APAR_sh + j_max_top)
+        c_sh = APAR_sh * j_max_top
+        J_shaded = (
+            (extinction_coeffcient_d - extinction_coeffcient_d_plus_b_black)
+            * (-b_sh - math.sqrt(b_sh**2 - 4 * a * c_sh))
+            / (2 * a)
+        )
+        J_shaded = max(J_shaded, 0)
+
+        V_j_sunlit = (
+            (C_i_sunlit - Gamma_sunlit)
+            * J_sunlit
+            / (4 * (C_i_sunlit + 2 * Gamma_sunlit))
+            * LAI_g
+            / LAI
+        )
+        if C_i_shaded + 2 * Gamma_shaded == 0:
+            V_j_shaded = 0
+        else:
+            V_j_shaded = (
+                (C_i_shaded - Gamma_shaded)
+                * J_shaded
+                / (4 * (C_i_shaded + 2 * Gamma_shaded))
+                * LAI_g
+                / LAI
+            )
+
+    return J_sunlit, J_shaded, V_j_sunlit, V_j_shaded
+
+
+def CalET_SW(
+    emissivity_c,
+    emissivity_s,
+    extinction_coef,
+    albedo_soil,
+    SteBol_const,
+    T_a_K,
+    R_s_total,
+    VPD_a,
+    rho_a,
+    C_p,
+    c_p,
+    gamma,
+    Delta,
+    S_max,
+    L_down,
+    COSTHETA,
+    LAI,
+    LAI_g,
+    T_c_K_sunlit,
+    T_c_K_shaded,
+    Q_n_isothermal_sunlit,
+    Q_n_isothermal_shaded,
+    r_a,
+    r_a_soil,
+    g_r_sunlit,
+    g_r_shaded,
+    r_a_c,
+    r_s_c,
+    r_s,
+    Q_n_sunlit_pre,
+    Q_n_shaded_pre,
+):  # calculate evapotranspiration rate using Shuttleworth-Wallace approach
+    # latent heat of vaporization (J/kg)
+    lambda_mol_sunlit = 56780.3 - 42.84 * T_a_K
+    # latent heat of vaporization (J/kg)
+    lambda_mol_shaded = 56780.3 - 42.84 * T_a_K
+    # latent heat of vaporization (J/kg)
+    lambda_kg = (56780.3 - 42.84 * T_a_K) / 0.018
+
+    # Delta_soil = a0 * b0 * c0 / (T_c_C_soil + b0) ** 2 * math.exp(a0 * T_c_C_soil / (T_c_C_soil + b0)) # slope of the saturated vapor pressure (hPa/°C)
+    Q_n_sunlit, Q_n_shaded, R_n_soil, G, R_n_sum, Q_n_sunlit_pre, Q_n_shaded_pre = CalRnSoil(
+        emissivity_c,
+        emissivity_s,
+        extinction_coef,
+        albedo_soil,
+        SteBol_const,
+        T_a_K,
+        R_s_total,
+        c_p,
+        S_max,
+        L_down,
+        COSTHETA,
+        LAI,
+        T_c_K_sunlit,
+        T_c_K_shaded,
+        Q_n_isothermal_sunlit,
+        Q_n_isothermal_shaded,
+        g_r_sunlit,
+        g_r_shaded,
+        Q_n_sunlit_pre,
+        Q_n_shaded_pre,
+    )
+    rr_a = (Delta + gamma) * r_a
+    rr_s = (Delta + gamma) * r_a_soil + gamma * r_s
+    rr_c = (Delta + gamma) * r_a_c + gamma * r_s_c
+
+    if LAI > 0:
+        # PM_c: Penman-Monteith transpiration rate of canopy
+        PM_c = (
+            (
+                (Delta * (R_n_sum - G))
+                + ((rho_a * C_p * VPD_a - Delta * r_a_c * (R_n_soil - G)) / (r_a + r_a_c))
+            )
+            / (Delta + (gamma * (1 + (r_s_c / (r_a + r_a_c)))))
+            * LAI_g
+            / LAI
+        )
+        # the weighting coefficient as a function of resistance
+        Cc = 1 / (1 + rr_c * rr_a / rr_s / (rr_c + rr_a))
+        # the weighting coefficient as a function of resistance
+        Cg = 1 / (1 + rr_s * rr_a / rr_c / (rr_s + rr_a))
+    else:
+        PM_c = 0
+        Cc = 0
+        Cg = 1
+    # PM_g: Penman-Monteith evaporation rate from the bare soil
+    PM_g = (
+        (Delta * (R_n_sum - G))
+        + ((rho_a * C_p * VPD_a - Delta * r_a_soil * (R_n_sum - R_n_soil)) / (r_a + r_a_soil))
+    ) / (Delta + (gamma * (1 + r_s / (r_a + r_a_soil))))
+
+    if S_max <= 0 or R_s_total <= 0:
+        PM_c = 0
+        PM_g = 0
+
+    lE_c = max(0, Cc * PM_c)
+    lE_soil = max(0, Cg * PM_g)
+
+    lE_sum = lE_c + lE_soil
+
+    if lE_sum > abs(R_n_sum * 2):
+        lE_sum = R_n_sum
+        lE_c = lE_sum
+        lE_soil = 0
+    ET_c_sum = lE_c / lambda_kg
+    ET_soil = lE_soil / lambda_kg
+    ET_sum = lE_sum / lambda_kg
+
+    H_sum = R_n_sum - lE_sum - G  # Energy fluxes are partitioned into H, lE, and G
+
+    return (
+        Q_n_sunlit,
+        Q_n_shaded,
+        Q_n_sunlit_pre,
+        Q_n_shaded_pre,
+        R_n_soil,
+        G,
+        R_n_sum,
+        lE_soil,
+        lE_sum,
+        ET_c_sum,
+        ET_soil,
+        ET_sum,
+        H_sum,
+    )
+
+
+def CalRnSoil(
+    emissivity_c,
+    emissivity_s,
+    extinction_coef,
+    albedo_soil,
+    SteBol_const,
+    T_a_K,
+    R_s_total,
+    c_p,
+    S_max,
+    L_down,
+    COSTHETA,
+    LAI,
+    T_c_K_sunlit,
+    T_c_K_shaded,
+    Q_n_isothermal_sunlit,
+    Q_n_isothermal_shaded,
+    g_r_sunlit,
+    g_r_shaded,
+    Q_n_sunlit_pre,
+    Q_n_shaded_pre,
+):
+    if LAI > 0:
+        Q_n_sunlit = Q_n_isothermal_sunlit - g_r_sunlit * c_p * (T_c_K_sunlit - T_a_K)
+        Q_n_shaded = Q_n_isothermal_shaded - g_r_shaded * c_p * (T_c_K_shaded - T_a_K)
+
+        if S_max > 0 and R_s_total > 0:
+            # k_r: canopy extinction coefficient of net radiation
+            k_r = math.sqrt(0.5) * 0.5 / COSTHETA
+
+            if k_r * LAI > 1:
+                k_r_exp = max(0.01, min(math.exp(-k_r * LAI), 0.99))
+                R_n_sum = (Q_n_sunlit + Q_n_shaded) / (1 - k_r_exp)
+
+                if (
+                    abs(R_n_sum)
+                    > abs(
+                        R_s_total * (1 - albedo_soil[1])
+                        + L_down
+                        - emissivity_c * SteBol_const * T_a_K**4
+                    )
+                    * 1.5
+                ):
+                    R_n_sum = (
+                        R_s_total * (1 - albedo_soil[1])
+                        + L_down
+                        - emissivity_c * SteBol_const * T_a_K**4
+                    )
+                    R_n_soil = R_n_sum - (Q_n_sunlit + Q_n_shaded)
+            elif LAI < 1:
+                R_n_sum = (Q_n_sunlit + Q_n_shaded) / LAI
+                R_n_soil = R_n_sum - (Q_n_sunlit + Q_n_shaded)
+            else:
+                R_n_sum = (
+                    R_s_total * (1 - albedo_soil[1])
+                    + L_down
+                    - emissivity_c * SteBol_const * T_a_K**4
+                )
+                R_n_soil = R_n_sum - (Q_n_sunlit + Q_n_shaded)
+            G = R_n_sum * 0.036
+        else:
+            R_n_soil = (L_down - emissivity_c * SteBol_const * T_a_K**4) * math.exp(
+                -extinction_coef * LAI
+            )
+            G = R_n_soil * 0.036
+            R_n_sum = L_down - emissivity_c * SteBol_const * T_a_K**4
+    else:
+        Q_n_sunlit = Q_n_sunlit_pre
+        Q_n_shaded = Q_n_shaded_pre
+        R_n_soil = (
+            R_s_total * (1 - albedo_soil[1]) + L_down - emissivity_s * SteBol_const * T_a_K**4
+        )
+        G = R_n_soil * 0.036
+        R_n_sum = R_n_soil
+
+    Q_n_sunlit_pre = Q_n_sunlit
+    Q_n_shaded_pre = Q_n_shaded
+
+    return Q_n_sunlit, Q_n_shaded, R_n_soil, G, R_n_sum, Q_n_sunlit_pre, Q_n_shaded_pre
+
+
+def WaterBalance(t_step, W, W_pre, W_capacity, W_wilting, rainfall, ET_sum):
+    W = min(W + rainfall, W_capacity)
+    W -= ET_sum * 60 * t_step
+
+    if W < 0:
+        ET_sum = W_pre
+        W = 0
+
+    if W == W_capacity:
+        W_retention = 1
+    elif W_wilting < W <= W_capacity:
+        W_retention = (W - W_wilting) / (W_capacity - W_wilting)
+    else:
+        W_retention = 0.00001
+
+    W_pre = W
+
+    return W, W_retention, W_pre, ET_sum
+
+
+def NewBucketModel(t_step, W, W_pre, W_capacity, W_wilting, rainfall, ET_sum):
+    if W_pre == W_capacity:
+        W = W_pre + rainfall - (ET_sum * 60 * t_step)
+    else:  # W_pre < W_capacity
+        W = W_pre + (W_capacity - W_pre) * np.tanh(
+            (rainfall - (ET_sum * 60 * t_step)) / (W_capacity - W_pre)
+        )
+
+    W = min(W, W_capacity)
+
+    if W < 0:
+        ET_sum = W_pre
+        W = 0
+
+    if W == W_capacity:
+        W_retention = 1
+    elif W_wilting < W <= W_capacity:
+        W_retention = (W - W_wilting) / (W_capacity - W_wilting)
+    else:
+        W_retention = 0.00001
+
+    W_pre = W
+
+    return W, W_retention, W_pre, ET_sum
+
+
+def BucketWithBottomHole(t_step, W, W_pre, W_capacity, W_wilting, rainfall, ET_sum):
+    W = min(W + rainfall, W_capacity)
+    b = 20
+    c = 1.5  # (mm)
+    # daily gravitational drainage (positive) or capillary rise (negative) (mm)
+    G_d = math.exp((W - W_wilting) / b) - c
+    W -= ET_sum * 60 * t_step + G_d
+
+    if W < 0:
+        ET_sum = W_pre
+        W = 0
+
+    if W == W_capacity:
+        W_retention = 1
+    elif W_wilting < W <= W_capacity:
+        W_retention = (W - W_wilting) / (W_capacity - W_wilting)
+    else:
+        W_retention = 0.00001
+
+    W_pre = W
+
+    return W, W_retention, W_pre, ET_sum

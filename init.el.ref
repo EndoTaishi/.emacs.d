@@ -1,0 +1,390 @@
+;; init.el --- My init.el
+
+; Author: Taishi Endo
+
+;;; Commentary:
+;;; Code
+
+(setq custom-file (locate-user-emacs-file "custom.el"))
+(load custom-file :no-error-if-file-is-missing)
+
+;;; Set up the package manager
+
+(require 'package)
+(package-initialize)
+
+(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/"))
+
+(when (< emacs-major-version 29)
+  (unless (package-installed-p 'use-package)
+    (unless package-archive-contents
+      (package-refresh-contents))
+    (package-install 'use-package)))
+
+(add-to-list 'display-buffer-alist
+             '("\\`\\*\\(Warnings\\|Compile-Log\\)\\*\\'"
+               (display-buffer-no-window)
+               (allow-no-window . t)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 基本設定
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; PATHの設定を引き継ぐ
+(use-package exec-path-from-shell
+  :ensure t
+  :config (exec-path-from-shell-initialize))
+
+;; 起動時の画面を非表示
+(setq inhibit-startup-message t)
+
+;; 対応する括弧をハイライト
+(setq show-paren-delay 0)
+(show-paren-mode t)
+
+;; 括弧のハイライトの設定
+(setq show-paren-style 'parenthesis)
+(set-face-attribute 'show-paren-match nil
+      :background "gray"
+      :underline 'unspecified)
+
+;; 対応する括弧を自動挿入
+(electric-pair-mode 1)
+
+;; 選択範囲をハイライト
+(set-face-attribute 'region nil
+                    :background "gray"
+                    :foreground "black")
+
+;; 現在行をハイライト
+(defface hlline-face
+  '((((class color)
+      (background dark))
+     (:background "dark slate gray"))
+    (((class color)
+      (background light))
+     (:background "#AAAAAA"))
+    (t
+     ()))
+  "*Face used by hl-line.")
+(global-hl-line-mode t)
+
+;; バックアップファイルの保存先の変更
+(setq backup-directory-alist
+  (cons (cons ".*" (expand-file-name "~/.emacs.d/backup"))
+        backup-directory-alist))
+(setq auto-save-file-name-transforms
+      `((".*", (expand-file-name "~/.emacs.d/backup/") t)))
+
+;; 現在位置の列数を表示
+(column-number-mode t)
+
+;; 左側に行番号表示
+(global-display-line-numbers-mode 1)
+
+;; "yes or no"の選択を"y or n"にする
+(fset 'yes-or-no-p 'y-or-n-p)
+
+;; 閉じる前に確認
+(setq confirm-kill-emacs 'y-or-n-p)
+
+;; 警告音無効
+(setq ring-bell-function 'ignore)
+
+(add-hook 'text-mode-hook 'turn-on-auto-fill)
+
+(menu-bar-mode 1)
+(scroll-bar-mode -1)
+(tool-bar-mode -1)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; キーバインディング
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-key global-map (kbd "C-t") 'other-window) ; ウィンドウ切り替え
+(define-key global-map (kbd "C-x f") 'find-file) ; C-x C-f と同等
+(define-key global-map (kbd "C-h") 'backward-delete-char) ; C-h でバックスペース
+(define-key global-map (kbd "C-x ?") 'help-command) ; C-x ? でヘルプを表示
+
+
+;; 単体行コメントアウト用コマンド
+(defun comment-out-current-line ()
+  "Toggle comment out using `comment-dwim`."
+  (interactive)
+  (move-beginning-of-line 1)
+  (set-mark-command nil)
+  (move-end-of-line 1)
+  (comment-dwim nil))
+(define-key global-map (kbd "C-;") 'comment-out-current-line)
+
+;; 選択中の入力は、regionを削除して挿入する
+(use-package delsel
+  :ensure nil
+  :hook (after-init . delete-selection-mode))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ヴィジュアルの設定
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; シンタックスハイライト
+(use-package treesit-auto
+  :ensure t)
+
+;; デフォルトのインデント
+(setq tab-width 4)
+(setq-default indent-tabs-mode nil)
+
+;; (leaf doom-themes
+  ;; :ensure t
+  ;; :config
+  ;; (load-theme 'doom-winter-is-coming-dark-blue t)
+  ;; (doom-themes-neotree-config)
+  ;; (doom-themes-org-config)
+  ;; (custom-set-faces
+   ;; '(font-lock-comment-face ((t (:foreground "#999999")))))
+  ;; :custom ((doom-themes-enable-italic . nil)
+           ;; (doom-themes-enable-bold . t)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Org mode
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Org captureを呼び出す
+(global-set-key (kbd "C-c l") #'org-store-link)
+(global-set-key (kbd "C-c a") #'org-agenda)
+(global-set-key (kbd "C-c c") #'org-capture)
+
+(use-package org
+  :ensure t
+  :custom
+  (org-agenda-files '("/Users/endotaishi/Library/Mobile Documents/com~apple~CloudDocs/Org/notes.org"))
+  (org-capture-templates
+   '(("n" "Note" entry
+      (file+headline "/Users/endotaishi/Library/Mobile Documents/com~apple~CloudDocs/Org/notes.org" "Notes")
+      "\n* %<%Y/%m/%d (%a)> [/]\n* TODO" :prepend t)))
+  (org-tag-alist '(("mantra" . ?m) ("life" . ?l))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; プログラミング言語一般
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(use-package highlight-indent-guides
+  :ensure t
+  :blackout t
+  :hook (((prog-mode-hook comint-mode-hook) . highlight-indent-guides-mode))
+  :config
+  (setq highlight-indent-guides-method character)
+  (setq highlight-indent-guides-auto-enabled t)
+  (setq highlight-indent-guides-responsive t)
+  (setq highlight-indent-guides-character ?\))
+
+
+(use-package rainbow-delimiters
+  :ensure t
+  :hook (((prog-mode-hook comint-mode-hook) . rainbow-delimiters-mode)))
+
+(use-package mwim
+  :ensure t
+  :bind (("C-a" . mwim-beginning-of-code-or-line)
+         ("C-e" . mwim-end-of-code-or-line)))
+
+(add-to-list 'auto-mode-alist '("\\.py" . python-ts-mode))
+
+(add-hook 'python-ts-mode #'python-ts-mode)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; その他
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; company
+(use-package company
+  :ensure t
+  :hook (after-init . global-company-mode))
+
+;; undo-tree
+(use-package undo-tree
+  :ensure t
+  :bind (("M-/" . undo-tree-redo))
+  :hook (after-init . global-undo-tree-mode)
+  :config
+  (setq undo-tree-auto-save-history nil))
+
+;; smart-mode-line
+(use-package smart-mode-line
+  :ensure t
+  :config
+  (setq sml/no-confirm-load-theme t)
+  (setq sml/theme 'light)
+  (setq sml/shorten-directory -1)  
+  (sml/setup))
+
+(use-package multi-term
+  :ensure t
+  :custom
+  (multi-term-program (getenv "SHELL")) ;; `\`不要
+  :preface
+  (defun open-shell-sub (new)
+    "Open a shell. If NEW is non-nil, create a new terminal. Otherwise, switch to an existing one."
+    (if (and (not new) (get-buffer-window "*terminal<1>*"))
+        ;; If a shell already exists, split horizontally
+        (progn
+          (select-window (get-buffer-window "*terminal<1>*"))
+          (split-window-right)
+          (other-window 1))
+      ;; First terminal: split vertically
+      (split-window-below)
+      (enlarge-window 5)
+      (other-window 1))
+    ;; Open or switch to the shell
+    (let ((term) (res))
+      (if (or new (null (setq term (dolist (buf (buffer-list) res)
+                                     (if (string-match "*terminal<[0-9]+>*" (buffer-name buf))
+                                         (setq res buf))))))
+          (multi-term)
+        (switch-to-buffer term))))
+  (defun open-shell ()
+    "Open a new shell."
+    (interactive)
+    (open-shell-sub t))
+  (defun to-shell ()
+    "Switch to an existing shell."
+    (interactive)
+    (open-shell-sub nil))
+  :bind (("C-^" . to-shell)
+         ("C-M-^" . open-shell)) ;; Term-specific bindings handled in :config
+  :config
+  (add-hook 'term-mode-hook
+            (lambda ()
+              (define-key term-raw-map (kbd "C-t") 'other-window)))) ;; `term-raw-map`に手動でキーを設定
+
+;; ivy
+(use-package ivy
+  :ensure t
+  :hook (after-init . ivy-mode)
+  :config
+  (use-package swiper
+    :ensure t
+    :bind (("C-s" . swiper)) ;; swiperのキー設定
+  ))
+
+(use-package counsel
+   :ensure t
+   :blackout t
+   :bind (("C-S-s" . counsel-imenu)
+          ("C-x C-r" . counsel-recentf))
+   :custom `((counsel-yank-pop-separator . "\n----------\n")
+             (counsel-find-file-ignore-regexp . ,(rx-to-string '(or "./" "../") 'no-group)))
+   :hook (after-init . counsel-mode)))
+
+(use-package prescient
+  :ensure t
+  :custom
+  (setq prescient-aggressive-file-save t)
+  :hook (global-minor-mode . prescient-persist-mode))
+
+(use-package ivy-prescient
+  :ensure t
+  :custom
+  (setq ivy-prescient-retain-classic-highlighting t)
+  :hook (global-minor-mode . ivy-prescient-mode))
+
+;;; Configure the minibuffer and completions
+
+(use-package vertico
+  :ensure t
+  :hook (after-init . vertico-mode))
+
+(use-package marginalia
+  :ensure t
+  :hook (after-init . marginalia-mode))
+
+(use-package orderless
+  :ensure t
+  :config
+  (setq completion-styles '(orderless basic))
+  (setq completion-category-defaults nil)
+  (setq completion-category-overrides nil))
+
+(use-package savehist
+  :ensure nil ; it is built-in
+  :hook (after-init . savehist-mode))
+
+(use-package corfu
+  :ensure t
+  :hook (after-init . global-corfu-mode)
+  :bind (:map corfu-map ("<tab>" . corfu-complete))
+  :config
+  (setq tab-always-indent 'complete)
+  (setq corfu-preview-current nil)
+  (setq corfu-min-width 20)
+
+  (setq corfu-popupinfo-delay '(1.25 . 0.5))
+  (corfu-popupinfo-mode 1) ; shows documentation after `corfu-popupinfo-delay'
+
+  ;; Sort by input history (no need to modify `corfu-sort-function').
+  (with-eval-after-load 'savehist
+    (corfu-history-mode 1)
+    (add-to-list 'savehist-additional-variables 'corfu-history)))
+
+;;; The file manager (Dired)
+
+(use-package dired
+  :ensure nil
+  :commands (dired)
+  :hook
+  ((dired-mode . dired-hide-details-mode)
+   (dired-mode . hl-line-mode))
+  :config
+  (setq dired-recursive-copies 'always)
+  (setq dired-recursive-deletes 'always)
+  (setq delete-by-moving-to-trash t)
+  (setq dired-dwim-target t))
+
+(use-package dired-subtree
+  :ensure t
+  :after dired
+  :bind
+  ( :map dired-mode-map
+    ("<tab>" . dired-subtree-toggle)
+    ("TAB" . dired-subtree-toggle)
+    ("<backtab>" . dired-subtree-remove)
+    ("S-TAB" . dired-subtree-remove))
+  :config
+  (setq dired-subtree-use-backgrounds nil))
+
+(use-package trashed
+  :ensure t
+  :commands (trashed)
+  :config
+  (setq trashed-action-confirmer 'y-or-n-p)
+  (setq trashed-use-header-line t)
+  (setq trashed-sort-key '("Date deleted" . t))
+  (setq trashed-date-format "%Y-%m-%d %H:%M:%S"))
+
+(use-package nerd-icons
+  :ensure t)
+
+(use-package nerd-icons-completion
+  :ensure t
+  :after marginalia
+  :config
+  (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
+
+(use-package nerd-icons-corfu
+  :ensure t
+  :after corfu
+  :config
+  (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
+
+(use-package nerd-icons-dired
+  :ensure t
+  :hook
+  (dired-mode . nerd-icons-dired-mode))
+
+
+(provide 'init)
+
+;; End:
+
+;;; init.el ends here

@@ -1,0 +1,93 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch main
+# Changes to be committed:
+#	modified:   .DS_Store
+#	modified:   ac-comphist.dat
+#	deleted:    auto-save-list/.saves-73492-admin552noMacBook-Pro.local~
+#	modified:   backup/!Users!endotaishi!.emacs.d!init.el~
+#	modified:   backup/#!Users!endotaishi!Documents!GitHub!mantra!mantra-engine-client!src!components!search!SearchView.vue#
+#	modified:   elpa/archives/gnu/archive-contents
+#	modified:   elpa/archives/melpa/archive-contents
+#	modified:   init.el
+#	modified:   transient/history.el
+#	modified:   var/prescient-save.el
+#
+# Untracked files:
+#	auto-save-list/
+#	backup/!Users!endotaishi!.emacs.d!.git!COMMIT_EDITMSG~
+#	backup/!Users!endotaishi!.emacs.d!bookmarks~
+#	backup/!Users!endotaishi!.emacs.d!custom.el~
+#	backup/!Users!endotaishi!.emacs.d!elpa!darcula-theme-20171227.1845!darcula-theme-autoloads.el~
+#	backup/!Users!endotaishi!.emacs.d!elpa!doom-themes-20240809.2135!doom-winter-is-coming-dark-black-theme.el~
+#	backup/!Users!endotaishi!.emacs.d!elpa!org-beautify-theme-20170908.2218!org-beautify-theme.el~
+#	backup/!Users!endotaishi!.emacs.d!init.el.ref~
+#	backup/!Users!endotaishi!.ssh!config~
+#	backup/!Users!endotaishi!CMSEP!src!temp!Master_5.py~
+#	backup/!Users!endotaishi!Desktop!FLUXNET2CMSEP.py~
+#	backup/!Users!endotaishi!Documents!GitHub!Research-tasks!2025.md~
+#	"backup/!Users!endotaishi!Documents!GitHub!Research-tasks!CMSEP\343\201\256\346\226\271\345\220\221\346\200\247.md~"
+#	backup/!Users!endotaishi!Documents!GitHub!Research-tasks!UNIX!find.md~
+#	backup/!Users!endotaishi!Documents!GitHub!Research-tasks!UNIX!grep.md~
+#	backup/!Users!endotaishi!Documents!GitHub!Research-tasks!note.org~
+#	backup/!Users!endotaishi!Documents!GitHub!Research-tasks!random.md~
+#	backup/!Users!endotaishi!Documents!GitHub!Research-tasks!todo.org~
+#	"backup/!Users!endotaishi!Documents!GitHub!Research-tasks!\347\265\261\350\250\210\347\232\204\343\201\252\345\200\213\344\275\223\347\276\244\345\213\225\346\205\213\343\203\242\343\203\207\343\203\253\343\201\256\347\265\261\345\220\210.md~"
+#	backup/!Users!endotaishi!Documents!GitHub!seminar!.gitignore~
+#	backup/!Users!endotaishi!Documents!notes.org~
+#	backup/!Users!endotaishi!Library!Mobile Documents!com~apple~CloudDocs!Org!notes.org~
+#	backup/!Users!endotaishi!Library!MobileDocuments!com~apple~CloudDocs!Org!notes.org~
+#	backup/!Users!endotaishi!obsidian-daily.sh~
+#	backup/#!Users!endotaishi!CMSEP!out!.gitignore#
+#	backup/#!Users!endotaishi!CMSEP!src!VegetationProductivityModel.pl#
+#	backup/#!Users!endotaishi!CMSEP!src!VegetationProductivityModelGA.py#
+#	backup/#!Users!endotaishi!CMSEP!src!ga.py#
+#	backup/#!Users!endotaishi!CMSEP!src!test.org#
+#	backup/#!Users!endotaishi!Documents!GitHub!mantra!mantra-engine-client!src!components!ui!SearchedImage.vue#
+#	backup/#!Users!endotaishi!Raycast!deepl.sh#
+#	backup/#!Users!endotaishi!memo.org#
+#	backup/#!Users!endotaishi!ownCloud!Org!notes.org#
+#	bookmarks
+#	custom.el
+#	custom.el~
+#	el-get/copilot/
+#	elpa/archives/gnu/archive-contents.signed
+#	elpa/archives/nongnu/
+#	elpa/catppuccin-theme-20241211.322/
+#	elpa/company-1.0.2.signed
+#	elpa/company-1.0.2/
+#	elpa/corfu-20241208.2242/
+#	elpa/darcula-theme-20171227.1845/
+#	elpa/dired-hacks-utils-20240629.1906/
+#	elpa/dired-subtree-20240629.1859/
+#	elpa/doom-themes-20240809.2135/doom-winter-is-coming-dark-black-theme.el
+#	elpa/ef-themes-1.9.0.signed
+#	elpa/ef-themes-1.9.0/
+#	elpa/gnupg/
+#	elpa/marginalia-20241124.1138/
+#	elpa/markdown-mode-20250115.1658/
+#	elpa/modus-themes-20241007.1332/
+#	elpa/nerd-icons-20241211.56/
+#	elpa/nerd-icons-completion-20240731.1213/
+#	elpa/nerd-icons-corfu-20241202.2355/
+#	elpa/nerd-icons-dired-20241013.212/
+#	elpa/orderless-20240926.921/
+#	elpa/org-beautify-theme-20170908.2218/
+#	elpa/poly-markdown-20230202.1210/
+#	elpa/polymode-20230317.1218/
+#	elpa/pretty-speedbar-20220303.1726/
+#	elpa/smartparens-1.11.0.signed
+#	elpa/smartparens-1.11.0/
+#	elpa/trashed-20230811.157/
+#	elpa/tree-sitter-20220212.1632/
+#	elpa/tree-sitter-langs-20241021.437/
+#	elpa/treesit-auto-20240511.1425/
+#	elpa/tsc-20220212.1632/
+#	elpa/vertico-20241208.2233/
+#	history
+#	init.el.ref
+#	pretty-speedbar-icons/
+#	tree-sitter/
+#

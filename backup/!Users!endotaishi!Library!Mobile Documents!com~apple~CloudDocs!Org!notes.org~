@@ -1,0 +1,289 @@
+* Notes
+** 2025/01/17 (Fri) [0/0]
+Langakuアップロード
+武装錬金（日本語）とラーメン赤猫（英語）以外Laojiaにアップロードした
+武装錬金1、3、9巻ファイルが壊れてた？
+ラーメン赤猫について
+** 英語がICEからもらった
+** 話ごとにpdfがあるけど、これを巻ごとに分ける必要があるのか？ワンチャンないかも
+
+* 2025/01/16 (Thu) [0/3]
+できる研究者の論文生産術を読んで、実際にスケジュールを確保する
+- 週4時間から
+- 「書く」ことに関わることはこの時間に行ってよい
+  - データの分析とか、目標設定とかも大丈夫
+
+** TODO 執筆時間 金曜日8時から
+   <2025-01-17 Fri 8:00 ++1w>
+   :PROPERTIES:
+   :LOGGING: DONE(!) logreport
+   :END:
+   
+** TODO 執筆時間 月曜日8時から
+   <2025-01-20 Mon 08:00 ++1w>
+   :PROPERTIES:
+   :LOGGING: DONE(!) logreport
+   :END:
+   
+** TODO OCR修正状況の確認
+DEADLINE: <2025-01-31 Fri>
+   
+* 2025/01/15 (Wed) [0/2]
+** TODO 1月Langakuアップロード
+** TODO 根岸さんとJasonさんにヒアリング
+
+* 2025/01/14 (Tue) [1/1]
+
+* 2025/01/12 (Sun) [/]
+* 修士論文、面接
+** スライドを作成しなければならない
+*** どうしてGAを使ったのか、詰めなければならない
+*** （理由はないのかもしれない？）
+*** 水収支式
+v***
+
+外交性11
+協調性10
+勤勉性8
+神経症傾向7
+開放性12
+
+* 2025/01/11 (Sat) [1/4]
+修士論文が終わったから、タスク管理
+
+修士論文関係
+** 面接や口頭試問に向けて土台づくり
+*** DONE GAとSAの速度比較？
+*** TODO スライド作成
+
+Mantra関係
+
+* 2025/01/01 (Wed) [1/1]
+
+段落の最初と最後を読んで、整合性が取れているか
+PFTとパラメータの1対1ではなくて、一つのPFTのなかで環境変数の関数としてパラメータを変化させることで、同一PFTないでも地下部の形質を反映したばらつきを考慮することができる
+
+* 2024/12/29 (Sun) [1/1]
+
+(フンボルト), Koppen, （Kira‚）Holdridge, Box, Woodward
+
+Box(1981)
+- 8つの気候指標を使って、90のplant type listを作成
+- 一部Thornthwaite法を用いている点に問題
+
+Woodward(1987)
+- HoldridgeとBoxが当時、植生分布と観測されていた気候データとの関係を広
+  域に調査した最新（かつ唯一）の研究だった。
+- しかし、統計的に調査しているため、生理学的でない
+- 気温と降水量に着目して生理学的に分類
+  - 年間最低気温と年間降水量
+* 2024/12/28 (Sat) [1/1]
+** DONE Abstractを書く
+
+Abstractを書いていないから、文章の向かっていく先がわからなくなっている。
+方法、結果、考察まで含めたやつ
+目次も見比べながら書くことで、構成を整えられる
+
+バイオームについて
+分類と分布の歴史的な流れ、そもそもどうやって分かれてた？
+ケッペンとか
+生産ばっか述べている
+
+ケッペン、ホンドリッジ
+
+Penmann
+* 2024/12/26 (Thu) [1/1]
+** DONE 
+
+Thornthwaite and Mather, 1957
+* 実蒸発散量
+降水量によるInputが可能蒸発散量より多い時、土壌水分はFullのままで、実蒸発散量＝可能蒸発散量になる
+降水量によるInputが可能蒸発散量より少ない時、土壌水分は減りはじめて、実蒸発散量＜可能蒸発散量になる
+- 実蒸発散量＝降水量-ΔST　ここでΔSTはある月と次の月の土壌貯水量の差
+
+* 2024/12/25 (Wed) [1/1]
+** DONE 
+
+(use-package multi-term
+  :ensure t
+  :custom
+  (multi-term-program (getenv "SHELL")) ;; `\`不要
+  :preface
+  (defun open-shell-sub (new)
+    "Open a shell. If NEW is non-nil, create a new terminal. Otherwise, switch to an existing one."
+    (if (and (not new) (get-buffer-window "*terminal<1>*"))
+        ;; If a shell already exists, split horizontally
+        (progn
+          (select-window (get-buffer-window "*terminal<1>*"))
+          (split-window-right)
+          (other-window 1))
+      ;; First terminal: split vertically
+      (split-window-below)
+      (enlarge-window 5)
+      (other-window 1))
+    ;; Open or switch to the shell
+    (let ((term) (res))
+      (if (or new (null (setq term (dolist (buf (buffer-list) res)
+                                     (if (string-match "*terminal<[0-9]+>*" (buffer-name buf))
+                                         (setq res buf))))))
+          (multi-term)
+        (switch-to-buffer term))))
+  (defun open-shell ()
+    "Open a new shell."
+    (interactive)
+    (open-shell-sub t))
+  (defun to-shell ()
+    "Switch to an existing shell."
+    (interactive)
+    (open-shell-sub nil))
+  :bind (("C-^" . to-shell)
+         ("C-M-^" . open-shell)) ;; Term-specific bindings handled in :config
+  :config
+  (add-hook 'term-mode-hook
+            (lambda ()
+              (define-key term-raw-map (kbd "C-t") 'other-window)))) ;; `term-raw-map`に手動でキーを設定
+
+* 2024/12/25 (Wed) [1/1]
+** DONE 
+
+(use-package multi-term
+  :ensure t
+  :custom
+  (multi-term-program (getenv "SHELL")) ;; `\`不要
+  :preface
+  (defun open-shell-sub (new)
+    "Open a shell. If NEW is non-nil, create a new terminal. Otherwise, switch to an existing one."
+    (if (and (not new) (get-buffer-window "*terminal<1>*"))
+        ;; If a shell already exists, split horizontally
+        (progn
+          (select-window (get-buffer-window "*terminal<1>*"))
+          (split-window-right)
+          (other-window 1))
+      ;; First terminal: split vertically
+      (split-window-below)
+      (enlarge-window 5)
+      (other-window 1))
+    ;; Open or switch to the shell
+    (let ((term) (res))
+      (if (or new (null (setq term (dolist (buf (buffer-list) res)
+                                     (if (string-match "*terminal<[0-9]+>*" (buffer-name buf))
+                                         (setq res buf))))))
+          (multi-term)
+        (switch-to-buffer term))))
+  (defun open-shell ()
+    "Open a new shell."
+    (interactive)
+    (open-shell-sub t))
+  (defun to-shell ()
+    "Switch to an existing shell."
+    (interactive)
+    (open-shell-sub nil))
+  :bind (("C-^" . to-shell)
+         ("C-M-^" . open-shell)) ;; Term-specific bindings handled in :config
+  :config
+  (add-hook 'term-mode-hook
+            (lambda ()
+              (define-key term-raw-map (kbd "C-t") 'other-window)))) ;; `term-raw-map`に手動でキーを設定
+
+* 2024/12/24 (Tue) [2/3]
+** DONE 道産子ギャル12巻のマージ
+** TODO 検索スピードアップ
+** DONE 1月納品データをCCCさんに依頼
+* 2024/12/23 (Mon) [1/1]
+** DONE サイレンのマッチング確認とアップロード
+
+* 2024/12/20 (Fri) [1/1]
+** DONE 道産子ギャル12リタッチ 
+DEADLINE: <2024-12-21 Sat>
+
+Monsi and Saeki（1953）は、群落内の光強度の減衰を考慮して推定した個葉
+の光合成速度を群落の高さ方向に積み上げていくことで群落光合成速度を求め
+た。この群落光合成モデルは、葉面積指数（Leaf Area Index: LAI）とある高
+さの葉の光吸収量を考慮しているという点で植物生理生態学的なプロセスを考
+慮したモデルであると言える。
+
+* 2024/12/16 (Mon) [1/1]
+** DONE 
+メモ：純放射量の配分は（Trenberth et al., 2009）に記載されている。
+
+
+* 2024/12/16 (Mon) [3/3]
+** DONE ウィッチウォッチのリタッチ
+** DONE 道産子ギャル12アップし直し
+*** laojiaサーバ上でマッチングし直してる
+** DONE 研究計画書修正
+
+* 2024/12/15 (Sun) [5/5]
+** DONE [#B] Diurnal Flux Figureを作成する
+** DONE [#A] 上野さん修正に対応
+** DONE [#B] 小見出しをつけていく DEADLINE: <2024-12-17 Tue>
+** DONE [#B] Resultsを書き直す DEADLINE: <2024-12-17 Tue>
+** DONE 研究計画書を書く
+
+* 2024/12/14 (Sat) [0/0]
+Phenologyまでは考慮していない
+土壌水分と蒸発散について記述する
+SiB2
+9つのPFTsに区切っている
+土壌は、地表面、根層、深層の三層構造に加え、地表面の凍結と積雪も考慮。
+蒸発散は、1雪氷面や林冠に遮られた水分からの蒸発、2植物の蒸散
+地表面の水たまりからの蒸発や、地表面からの蒸発も考慮
+複雑な構造
+
+
+Cropper et al. (2004)
+熱帯ヤシ科の一種Iriarteaを取り上げ、個体群動態のモデルシミュレーション
+を行う。二次林と成熟林における伐採から30年間の個体群動態を適切に推定す
+ることを目的とし、黄金分割法（Golden section search）と遺伝的アルゴリ
+ズム（Genetic Algotrithm: GA）を用いて、繁殖力と苗木の個体群パラメータ
+の2つのパラメータを最適化した。
+
+　土壌水分は、〜のように植物生産力に大きな影響を与える。土壌水分は〜のように観測される。しかし〜のような問題があって、土壌水分の変動を空間的・時間的に観測することは難しい。だから、CMSEPでは水収支の計算式が非常にシンプルに表されていた。マトリックポテンシャル等を計算するというのも考えられる。
+　GAは自然淘汰を模した進化計算の一つの手法であり、〜という手法である。生態系モデリング分野では〜のように活用されてきた。TEMsは非常に複雑で、1つのパラメータを調整するだけですごく時間や費用がかかると思う。CMSEPは簡便で汎用的だから、GAと相性がいいと思う。
+
+* 2024/12/12 (Thu) [2/2]
+** DONE Langaku12月分アップロード
+DEADLINE: <2024-12-27 Fri>
+** DONE Langaku新しくきた作品を確認（1月アップ分）
+* 2024/12/11 (Wed) [1/1]
+** DONE NARUTO翻訳終わってるかチェック
+
+* 2024/12/10 (Tue) [1/1]
+** DONE NARUTOアップロード1~9ディレクトリ名を変えて再実行
+
+* 2024/12/09 (Mon) [4/4]
+** DONE ONE PIECEのアップ
+52巻くらいまでできて、20、32、34を強制マッチング中
+帰宅後、34まで終わってたら一旦ストップして、以降通常マッチング
+20、32、34がきちんとマッチしてるか確認
+** DONE ONE PIECE購入して自炊
+** DONE BNEにプロトを共有
+** DONE [#A] NARUTOをアップして、連絡
+DEADLINE: <2024-12-11 Wed>
+
+* 2024/12/08 (Sun) [/]
+** NOTES
+CN-Din2003年の生産力が過大評価されたのは、モデルが極端気候の影響を受け
+づらいからではないか？
+
+* 2024/12/06 (Fri) [1/1]
+** DONE 年間GPP積算値を比較する
+** NOTES
+1. 生産力ピークの値の代表性？
+   本当にその日が最大なのか？確かに便宜的に最大と言っているだけで、似
+   たような日はたくさんある。
+2. 年間生産力
+   展葉がはやまったことでGPPを稼ぐことができて、年間GPP積算値が観測値
+   に近づいているかもしれない
+
+* 2024/12/05 (Thu) [1/1]
+** DONE Phenologyの変化を表す図表
+** NOTES
+1. Phenologyと日付のずれや、生産力の年間値を図にする
+   パラメータ値は文献から得られる情報では限りがある
+   それでもPFTを分けれたのは今回の手法のいいところである。
+2. 不要な地点は除外する
+   除外した地点についてはFURTHER STUDYに記載できる
+3. CN-Din
+   2003年夏、ヨーロッパは暖かい、日本含む東日本は寒かった（夏らしくな
+   かった）

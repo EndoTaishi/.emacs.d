@@ -1,0 +1,21 @@
+###
+*.gitignore
+*.gitignore.rtf
+
+### OS-generated files
+*.DS_Store
+
+### Word temporary 
+*~$*.doc*
+
+### Word auto backup files
+*Backup of *.doc*
+
+### Excel temporary
+*~$*.xls*
+
+### Excel auto backup files
+*.xlk
+
+### PowerPoint temporary
+*~$*.ppt*

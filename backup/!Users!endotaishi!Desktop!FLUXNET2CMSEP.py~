@@ -1,0 +1,83 @@
+import glob
+import os
+from concurrent.futures import ProcessPoolExecutor
+import pandas as pd
+
+
+# 時間をHH:MMに変換する関数
+def format_time(time_val):
+    time_str = f"{int(time_val):04d}"  # 4桁の0詰め
+    return time_str[:2] + ":" + time_str[2:]
+
+
+def process_file(file_path):
+    site = file_path.split("/")[5]
+    print(f"Processing {site}...")
+
+    # 地域名をもとにディレクトリを作成
+    os.makedirs(f"./FLUXNET/New/{site}/forcing", exist_ok=True)
+
+    # Pandasのデータフレームとして読み込み
+    df = pd.read_csv(file_path)
+
+    try:
+        # 変換して各日付のデータを保存
+        for index, row in df.iterrows():
+            time = str(int(row["TIMESTAMP_START"]))
+            YYYY = time[:4]
+            MM = time[4:6]
+            DD = time[6:8]
+            HHMM = format_time(time[8:])
+
+            # os.makedirs(f"./FLUXNET/New/{site}/forcing/{YYYY}", exist_ok=True)
+            filename = (
+                f"/Users/endotaishi/CMSEP/data/FLUXNET/{site}/{YYYY}/{site}_{YYYY}_{MM}_{DD}.csv"
+            )
+
+            TA_F = row["TA_F"]
+            P_F = row["P_F"]
+            RH = row["RH"]
+            WS_F = row["WS_F"]
+            PA_F = row["PA_F"]
+            SW_IN_F = row["SW_IN_F"]
+            GPP_DT_VUT_REF = row["GPP_DT_VUT_REF"]
+            # SWC_F_MDS_1 = row["SWC_F_MDS_1"]
+            # LE_F_MDS = row["LE_F_MDS"]
+            # H_F_MDS = row["H_F_MDS"]
+
+            # データフレームを作成
+            remaining_df = pd.DataFrame(
+                {
+                    "HH:MM": [HHMM],
+                    "TA_F": [TA_F],
+                    "P_F": [P_F],
+                    "RH": [RH],
+                    "WS_F": [WS_F],
+                    "PA_F": [PA_F],
+                    "SW_IN_F": [SW_IN_F],
+                    "GPP_NT_VUT_REF": [GPP_DT_VUT_REF],
+                    # "SWC_F_MDS_1": [SWC_F_MDS_1],
+                    # "LE_F_MDS": [LE_F_MDS],
+                    # "H_F_MDS": [H_F_MDS],
+                }
+            )
+
+            # ファイルが存在しない場合は新しく作成、存在する場合はデータを追加
+            os.makedirs(f"/Users/endotaishi/CMSEP/data/FLUXNET/{site}/{YYYY}", exist_ok=True)
+            if not os.path.isfile(filename):
+                remaining_df.to_csv(filename, header=False, index=False)
+            else:
+                remaining_df.to_csv(filename, mode="a", header=False, index=False)
+        print(f"{site} Done!")
+    except Exception as e:
+        print(f"Error: {e}")
+        print(f"Error: {site}")
+
+
+# 並列処理の準備
+if __name__ == "__main__":
+    file_paths = glob.glob(f"/Users/endotaishi/Desktop/FLUXNET/*/FLX_*_FLUXNET2015_SUBSET_H*.csv")
+    print(f"地点数: {len(file_paths)}")
+
+    with ProcessPoolExecutor() as executor:
+        executor.map(process_file, file_paths)
